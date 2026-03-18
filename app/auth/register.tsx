@@ -19,12 +19,18 @@ export default function Register() {
     const [loading, setLoading] = useState(false);
 
     const handleRegister = async () => {
+        if (!email || !password) {
+            Alert.alert("Missing Fields", "Please enter your email and password.");
+            return;
+        }
+
         setLoading(true);
-        const { error } = await supabase.auth.signUp({
+
+        const { data, error } = await supabase.auth.signUp({
             email,
             password,
-            options: { emailRedirectTo: "carpiofit://auth/callback" },
         });
+
         setLoading(false);
 
         if (error) {
@@ -32,8 +38,8 @@ export default function Register() {
             return;
         }
 
-        Alert.alert("Check your email", "We sent you a confirmation link to activate your account.");
-        router.push("/auth/login");
+        // Navigate to OTP screen, passing the email along
+        router.push({ pathname: "/auth/verify-otp", params: { email } });
     };
 
     return (
@@ -42,9 +48,7 @@ export default function Register() {
             behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
             <StatusBar style="light" />
-
             <View style={styles.inner}>
-                {/* Logo / Title */}
                 <View style={styles.topSection}>
                     <View style={styles.logoCircle}>
                         <Text style={styles.logoEmoji}>🏋️</Text>
@@ -53,7 +57,6 @@ export default function Register() {
                     <Text style={styles.tagline}>Start your fitness journey today</Text>
                 </View>
 
-                {/* Card */}
                 <View style={styles.card}>
                     <Text style={styles.cardTitle}>Create Account</Text>
 
@@ -109,77 +112,44 @@ export default function Register() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#0a0a0a" },
-    inner: {
-        flex: 1,
-        justifyContent: "center",
-        padding: 24,
-        gap: 28,
-    },
+    inner: { flex: 1, justifyContent: "center", padding: 24, gap: 28 },
     topSection: { alignItems: "center", gap: 10 },
     logoCircle: {
         width: 80, height: 80, borderRadius: 40,
         backgroundColor: "rgba(34,197,94,0.12)",
         borderWidth: 2, borderColor: "rgba(34,197,94,0.25)",
-        alignItems: "center", justifyContent: "center",
-        marginBottom: 4,
+        alignItems: "center", justifyContent: "center", marginBottom: 4,
     },
     logoEmoji: { fontSize: 36 },
     appName: { color: "#fff", fontSize: 28, fontWeight: "800", letterSpacing: 0.5 },
     tagline: { color: "#888", fontSize: 14 },
-
     card: {
-        backgroundColor: "#1a1a1a",
-        borderRadius: 24,
-        padding: 24,
-        gap: 4,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-        elevation: 10,
+        backgroundColor: "#1a1a1a", borderRadius: 24, padding: 24, gap: 4,
+        shadowColor: "#000", shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.4, shadowRadius: 12, elevation: 10,
     },
-    cardTitle: {
-        color: "#fff", fontSize: 20, fontWeight: "700",
-        marginBottom: 16,
-    },
+    cardTitle: { color: "#fff", fontSize: 20, fontWeight: "700", marginBottom: 16 },
     inputLabel: { color: "#888", fontSize: 13, fontWeight: "500", marginBottom: 6 },
     input: {
-        backgroundColor: "#2a2a2a",
-        borderRadius: 12,
-        paddingHorizontal: 14,
-        paddingVertical: 13,
-        color: "#fff",
-        fontSize: 14,
-        marginBottom: 14,
-        borderWidth: 1,
-        borderColor: "#333",
+        backgroundColor: "#2a2a2a", borderRadius: 12,
+        paddingHorizontal: 14, paddingVertical: 13,
+        color: "#fff", fontSize: 14, marginBottom: 14,
+        borderWidth: 1, borderColor: "#333",
     },
     primaryBtn: {
-        backgroundColor: "#22c55e",
-        borderRadius: 14,
-        paddingVertical: 15,
-        alignItems: "center",
-        marginTop: 4,
-        shadowColor: "#22c55e",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 8,
-        elevation: 6,
+        backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: 15,
+        alignItems: "center", marginTop: 4, shadowColor: "#22c55e",
+        shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35,
+        shadowRadius: 8, elevation: 6,
     },
     primaryBtnDisabled: { opacity: 0.6 },
     primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-
-    dividerRow: {
-        flexDirection: "row", alignItems: "center",
-        gap: 10, marginVertical: 16,
-    },
+    dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 16 },
     divider: { flex: 1, height: 1, backgroundColor: "#2a2a2a" },
     dividerText: { color: "#555", fontSize: 12 },
-
     secondaryBtn: {
         borderWidth: 1, borderColor: "#2a2a2a",
-        borderRadius: 14, paddingVertical: 14,
-        alignItems: "center",
+        borderRadius: 14, paddingVertical: 14, alignItems: "center",
     },
     secondaryBtnText: { color: "#aaa", fontSize: 15, fontWeight: "600" },
 });

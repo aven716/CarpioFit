@@ -20,11 +20,21 @@ export default function Login() {
 
     const handleLogin = async () => {
         setLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
+
         setLoading(false);
+
         if (error) {
             Alert.alert("Login Error", error.message);
+            return;
         }
+
+        // Navigate to home
+        router.replace("/tabs");
     };
 
     return (

@@ -1,5 +1,6 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
+import { StatusBar } from 'expo-status-bar';
+import { Activity, Flame, Plus, Target, TrendingUp } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
   Dimensions,
@@ -9,23 +10,43 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-// Icons — requires: npm install lucide-react-native react-native-svg
-import { StatusBar } from 'expo-status-bar';
-import { Activity, Flame, Plus, Target, TrendingUp } from "lucide-react-native";
-
-
+import { supabase } from "../../lib/supabase";
+import { usePedometer } from "../../lib/usePedometer";
 const { width } = Dimensions.get("window");
+
 
 interface UserData {
   name: string;
   age: string;
-  gender: string;
   currentWeight: string;
   goalWeight: string;
   fitnessGoal: string;
+  dailyCalories: number;
+  dailyProtein: number;
+  dailyFat: number;
+  dailyCarbs: number;
 }
 
-// Simple progress bar component
+interface DailyStats {
+  caloriesBurned: number;
+  steps: number;
+  activeMinutes: number;
+  distanceKm: number;
+}
+
+interface WorkoutItem {
+  name: string;
+  time: string;
+  duration: string;
+  type: string;
+}
+
+interface StreakData {
+  currentStreak: number;
+  longestStreak: number;
+  totalActiveDays: number;
+}
+
 function ProgressBar({
   value,
   height = 8,
@@ -50,7 +71,6 @@ function ProgressBar({
   );
 }
 
-// Footprints icon substitute (not in lucide-react-native core set)
 function FootprintsIcon({ color }: { color: string }) {
   return (
     <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
@@ -59,7 +79,6 @@ function FootprintsIcon({ color }: { color: string }) {
   );
 }
 
-// Apple icon substitute
 function AppleIcon({ color }: { color: string }) {
   return (
     <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
@@ -71,31 +90,166 @@ function AppleIcon({ color }: { color: string }) {
 export default function Home() {
   const navigation = useNavigation<any>();
   const [userData, setUserData] = useState<UserData | null>(null);
-  const [caloriesConsumed] = useState(1240);
-  const calorieGoal = 2100;
+  const [dailyStats, setDailyStats] = useState<DailyStats>({
+    caloriesBurned: 0,
+    steps: 0,
+    activeMinutes: 0,
+    distanceKm: 0,
+  });
+  const [todayWorkouts, setTodayWorkouts] = useState<WorkoutItem[]>([]);
+  const [streakData, setStreakData] = useState<StreakData>({
+    currentStreak: 0,
+    longestStreak: 0,
+    totalActiveDays: 0,
+  });
+  const [caloriesConsumed] = useState(0);
+
+  const calorieGoal = userData?.dailyCalories ?? 2000;
   const caloriesRemaining = calorieGoal - caloriesConsumed;
 
   const macros = [
-    { name: "Carbs", consumed: 124, goal: 250, color: "#3b82f6", label: "g" },
-    { name: "Protein", consumed: 68, goal: 150, color: "#f97316", label: "g" },
-    { name: "Fat", consumed: 42, goal: 70, color: "#a855f7", label: "g" },
+    { name: "Carbs", consumed: 0, goal: userData?.dailyCarbs ?? 250, color: "#3b82f6", label: "g" },
+    { name: "Protein", consumed: 0, goal: userData?.dailyProtein ?? 150, color: "#f97316", label: "g" },
+    { name: "Fat", consumed: 0, goal: userData?.dailyFat ?? 70, color: "#a855f7", label: "g" },
   ];
-
+  const { steps, distanceKm, caloriesBurned, goalProgress, isAvailable, isLoading } = usePedometer();
+ 
   useEffect(() => {
-    AsyncStorage.getItem("carpioFitUser").then((data) => {
-      if (data) setUserData(JSON.parse(data));
-    });
+    if (!isAvailable || steps === 0) return;
+
+    const syncSteps = async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData.user;
+      if (!user) return;
+
+      const today = new Date().toISOString().split("T")[0];
+
+      await supabase.from("daily_stats").upsert({
+        user_id: user.id,
+        date: today,
+        steps: steps,
+        calories_burned: caloriesBurned,
+        distance_km: distanceKm,
+      });
+    };
+
+    if (steps % 20 === 0) syncSteps();
+  }, [steps]);
+ 
+ 
+  useEffect(() => {
+    
+    const loadAllData = async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData.user;
+      if (!user) return;
+
+      const today = new Date().toISOString().split("T")[0];
+
+      // Fetch all data in parallel
+      const [profileRes, dailyStatsRes, workoutsRes, streakRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("first_name, age, weight_kg, goal_weight, goal, daily_calories, daily_protein, daily_fat, daily_carbs")
+          .eq("id", user.id)
+          .single(),
+
+        supabase
+          .from("daily_stats")
+          .select("calories_burned, steps, active_minutes, distance_km")
+          .eq("user_id", user.id)
+          .eq("date", today)
+          .single(),
+
+        supabase
+          .from("workouts")
+          .select("name, type, duration_minutes, created_at")
+          .eq("user_id", user.id)
+          .eq("date", today)
+          .order("created_at", { ascending: true }),
+
+        supabase
+          .from("streaks")
+          .select("current_streak, longest_streak, total_active_days")
+          .eq("user_id", user.id)
+          .single(),
+      ]);
+
+      // Set profile
+      if (profileRes.data) {
+        setUserData({
+          name: profileRes.data.first_name,
+          age: profileRes.data.age?.toString() ?? "",
+          currentWeight: profileRes.data.weight_kg?.toString() ?? "",
+          goalWeight: profileRes.data.goal_weight?.toString() ?? "",
+          fitnessGoal: profileRes.data.goal ?? "",
+          dailyCalories: profileRes.data.daily_calories ?? 2000,
+          dailyProtein: profileRes.data.daily_protein ?? 150,
+          dailyFat: profileRes.data.daily_fat ?? 70,
+          dailyCarbs: profileRes.data.daily_carbs ?? 250,
+        });
+      }
+
+      // Set daily stats (if no row yet for today, defaults stay 0)
+      if (dailyStatsRes.data) {
+        setDailyStats({
+          caloriesBurned: Number(dailyStatsRes.data.calories_burned) ?? 0,
+          steps: dailyStatsRes.data.steps ?? 0,
+          activeMinutes: dailyStatsRes.data.active_minutes ?? 0,
+          distanceKm: Number(dailyStatsRes.data.distance_km) ?? 0,
+        });
+      }
+
+      // Set today's workouts
+      if (workoutsRes.data && workoutsRes.data.length > 0) {
+        const formatted: WorkoutItem[] = workoutsRes.data.map((w) => ({
+          name: w.name,
+          type: w.type ?? "general",
+          duration: w.duration_minutes ? `${w.duration_minutes} min` : "--",
+          time: new Date(w.created_at).toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        }));
+        setTodayWorkouts(formatted);
+      }
+
+      // Set streak
+      if (streakRes.data) {
+        setStreakData({
+          currentStreak: streakRes.data.current_streak ?? 0,
+          longestStreak: streakRes.data.longest_streak ?? 0,
+          totalActiveDays: streakRes.data.total_active_days ?? 0,
+        });
+      }
+    };
+
+    loadAllData();
+    
   }, []);
 
   const statsCards = [
-    { icon: "flame", label: "Calories Burned", value: "420", unit: "kcal", color: "#f97316" },
-    { icon: "footprints", label: "Steps Today", value: "6,234", unit: "steps", color: "#22c55e" },
-    { icon: "activity", label: "Active Minutes", value: "45", unit: "min", color: "#3b82f6" },
-  ];
-
-  const todayWorkouts = [
-    { name: "Morning Run", time: "07:00 AM", duration: "30 min", type: "cardio" },
-    { name: "Upper Body", time: "06:00 PM", duration: "45 min", type: "strength" },
+    {
+      icon: "flame",
+      label: "Calories Burned",
+      value: isAvailable ? caloriesBurned.toString() : dailyStats.caloriesBurned.toString(),
+      unit: "kcal",
+      color: "#f97316",
+    },
+    {
+      icon: "footprints",
+      label: "Steps Today",
+      value: isAvailable ? steps.toLocaleString() : dailyStats.steps.toLocaleString(),
+      unit: "steps",
+      color: "#22c55e",
+    },
+    {
+      icon: "activity",
+      label: "Active Minutes",
+      value: dailyStats.activeMinutes.toString(),
+      unit: "min",
+      color: "#3b82f6",
+    },
   ];
 
   const fitnessGoalLabel: Record<string, string> = {
@@ -107,6 +261,8 @@ export default function Home() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <StatusBar style="light" />
+
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.greeting}>
@@ -114,9 +270,12 @@ export default function Home() {
         </Text>
         <Text style={styles.subGreeting}>Ready to crush your goals today?</Text>
       </View>
-
+      <View style={{ backgroundColor: "#333", padding: 10, borderRadius: 8 }}>
+        <Text style={{ color: "#fff", fontSize: 12 }}>isAvailable: {isAvailable ? "true" : "false"}</Text>
+        <Text style={{ color: "#fff", fontSize: 12 }}>isLoading: {isLoading ? "true" : "false"}</Text>
+        <Text style={{ color: "#fff", fontSize: 12 }}>Steps: {steps}</Text>
+      </View>
       {/* Calorie Card */}
-      <StatusBar style="light" />
       <View style={[styles.card, styles.calorieCard]}>
         <View style={styles.calorieCardHeader}>
           <View style={styles.calorieCardLeft}>
@@ -156,8 +315,7 @@ export default function Home() {
             <View key={macro.name} style={styles.macroItem}>
               <Text style={styles.macroName}>{macro.name}</Text>
               <Text style={styles.macroValue}>
-                {macro.consumed}/{macro.goal}
-                {macro.label}
+                {macro.consumed}/{macro.goal}{macro.label}
               </Text>
               <ProgressBar
                 value={(macro.consumed / macro.goal) * 100}
@@ -171,7 +329,7 @@ export default function Home() {
 
       {/* Stats Grid */}
       <View style={styles.statsGrid}>
-        {statsCards.map((stat, index) => (
+        {statsCards.map((stat) => (
           <View key={stat.label} style={[styles.card, styles.statCard]}>
             {stat.icon === "flame" && <Flame size={20} color={stat.color} />}
             {stat.icon === "footprints" && <FootprintsIcon color={stat.color} />}
@@ -182,6 +340,9 @@ export default function Home() {
           </View>
         ))}
       </View>
+
+      {/* Streak Card */}
+     
 
       {/* Weight Goal Card */}
       <View style={[styles.card, styles.darkCard]}>
@@ -204,14 +365,14 @@ export default function Home() {
             <Text style={styles.weightValue}>
               {userData?.currentWeight ?? "--"}
             </Text>
-            <Text style={styles.weightLabel}>Current</Text>
+            <Text style={styles.weightLabel}>Current (kg)</Text>
           </View>
           <TrendingUp size={24} color="#22c55e" />
           <View style={{ alignItems: "flex-end" }}>
             <Text style={styles.weightValue}>
               {userData?.goalWeight ?? "--"}
             </Text>
-            <Text style={styles.weightLabel}>Goal</Text>
+            <Text style={styles.weightLabel}>Goal (kg)</Text>
           </View>
         </View>
 
@@ -238,35 +399,42 @@ export default function Home() {
           </TouchableOpacity>
         </View>
 
-        {todayWorkouts.map((workout, index) => (
-          <View key={index} style={[styles.card, styles.workoutCard]}>
-            <View>
-              <Text style={styles.workoutName}>{workout.name}</Text>
-              <Text style={styles.workoutMeta}>
-                {workout.time} • {workout.duration}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.workoutBadge,
-                workout.type === "cardio"
-                  ? styles.cardioBadge
-                  : styles.strengthBadge,
-              ]}
-            >
-              <Text
+        {todayWorkouts.length === 0 ? (
+          <View style={[styles.card, styles.darkCard, { alignItems: "center", paddingVertical: 24 }]}>
+            <Text style={{ fontSize: 32, marginBottom: 8 }}>🏃</Text>
+            <Text style={{ color: "#888", fontSize: 14 }}>No workouts logged today</Text>
+          </View>
+        ) : (
+          todayWorkouts.map((workout, index) => (
+            <View key={index} style={[styles.card, styles.workoutCard]}>
+              <View>
+                <Text style={styles.workoutName}>{workout.name}</Text>
+                <Text style={styles.workoutMeta}>
+                  {workout.time} • {workout.duration}
+                </Text>
+              </View>
+              <View
                 style={[
-                  styles.workoutBadgeText,
+                  styles.workoutBadge,
                   workout.type === "cardio"
-                    ? styles.cardioText
-                    : styles.strengthText,
+                    ? styles.cardioBadge
+                    : styles.strengthBadge,
                 ]}
               >
-                {workout.type}
-              </Text>
+                <Text
+                  style={[
+                    styles.workoutBadgeText,
+                    workout.type === "cardio"
+                      ? styles.cardioText
+                      : styles.strengthText,
+                  ]}
+                >
+                  {workout.type}
+                </Text>
+              </View>
             </View>
-          </View>
-        ))}
+          ))
+        )}
       </View>
     </ScrollView>
   );
@@ -283,8 +451,6 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
     paddingTop: 30,
   },
-
-  // Header
   header: {
     paddingTop: 16,
   },
@@ -298,8 +464,6 @@ const styles = StyleSheet.create({
     color: "#888",
     marginTop: 4,
   },
-
-  // Cards
   card: {
     borderRadius: 16,
     padding: 16,
@@ -315,8 +479,6 @@ const styles = StyleSheet.create({
   calorieCard: {
     backgroundColor: "#1a3329",
   },
-
-  // Calorie card internals
   calorieCardHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -405,8 +567,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 4,
   },
-
-  // Stats grid
   statsGrid: {
     flexDirection: "row",
     gap: 10,
@@ -431,8 +591,6 @@ const styles = StyleSheet.create({
     color: "#666",
     marginTop: 2,
   },
-
-  // Weight goal card
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -464,8 +622,6 @@ const styles = StyleSheet.create({
     color: "#888",
     marginTop: 2,
   },
-
-  // Workouts
   workoutsSection: {
     gap: 10,
   },
@@ -512,8 +668,6 @@ const styles = StyleSheet.create({
   cardioText: { color: "#f97316" },
   strengthBadge: { backgroundColor: "rgba(59,130,246,0.1)" },
   strengthText: { color: "#3b82f6" },
-
-  // Progress bar
   progressTrack: {
     borderRadius: 99,
     overflow: "hidden",

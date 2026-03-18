@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
     Award,
     Bell,
@@ -36,6 +35,20 @@ interface UserData {
     fitnessGoal: string;
 }
 
+interface StatsData {
+    totalWorkouts: number;
+    totalDistanceKm: number;
+    totalActiveDays: number;
+    currentStreak: number;
+}
+
+interface AchievementItem {
+    icon: any;
+    label: string;
+    color: string;
+    earned: boolean;
+}
+
 function ProgressBar({
     value,
     height = 8,
@@ -49,7 +62,7 @@ function ProgressBar({
 }) {
     const clamped = Math.min(Math.max(value, 0), 100);
     return (
-        <View style={[{ height, backgroundColor: trackColor, borderRadius: 99, overflow: "hidden" }]}>
+        <View style={{ height, backgroundColor: trackColor, borderRadius: 99, overflow: "hidden" }}>
             <View style={{ width: `${clamped}%`, height, backgroundColor: fillColor, borderRadius: 99 }} />
         </View>
     );
@@ -57,12 +70,128 @@ function ProgressBar({
 
 export default function Profile() {
     const [userData, setUserData] = useState<UserData | null>(null);
+    const [statsData, setStatsData] = useState<StatsData>({
+        totalWorkouts: 0,
+        totalDistanceKm: 0,
+        totalActiveDays: 0,
+        currentStreak: 0,
+    });
+    const [achievements, setAchievements] = useState<AchievementItem[]>([]);
     const [notifications, setNotifications] = useState(true);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        AsyncStorage.getItem("carpioFitUser").then((data) => {
-            if (data) setUserData(JSON.parse(data));
-        });
+        const loadAllData = async () => {
+            const { data: authData } = await supabase.auth.getUser();
+            const user = authData.user;
+            if (!user) return;
+
+            const [profileRes, workoutsRes, streakRes, userAchievementsRes, allAchievementsRes] =
+                await Promise.all([
+                    // Profile
+                    supabase
+                        .from("profiles")
+                        .select("first_name, age, gender, weight_kg, goal_weight, goal")
+                        .eq("id", user.id)
+                        .single(),
+
+                    // All completed workouts for totals
+                    supabase
+                        .from("workouts")
+                        .select("distance_km")
+                        .eq("user_id", user.id)
+                        .eq("completed", true),
+
+                    // Streak
+                    supabase
+                        .from("streaks")
+                        .select("current_streak, total_active_days")
+                        .eq("user_id", user.id)
+                        .single(),
+
+                    // User's earned achievements
+                    supabase
+                        .from("user_achievements")
+                        .select("achievement_id")
+                        .eq("user_id", user.id),
+
+                    // All achievement definitions
+                    supabase
+                        .from("achievements")
+                        .select("id, key, name, icon, category"),
+                ]);
+
+            // Set profile
+            if (profileRes.data) {
+                setUserData({
+                    name: profileRes.data.first_name ?? "User",
+                    age: profileRes.data.age?.toString() ?? "--",
+                    gender: profileRes.data.gender ?? "--",
+                    currentWeight: profileRes.data.weight_kg?.toString() ?? "--",
+                    goalWeight: profileRes.data.goal_weight?.toString() ?? "--",
+                    fitnessGoal: profileRes.data.goal ?? "",
+                });
+            }
+
+            // Set stats
+            const totalWorkouts = workoutsRes.data?.length ?? 0;
+            const totalDistanceKm = workoutsRes.data
+                ?.reduce((sum, w) => sum + (Number(w.distance_km) || 0), 0)
+                ?? 0;
+
+            setStatsData({
+                totalWorkouts,
+                totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
+                totalActiveDays: streakRes.data?.total_active_days ?? 0,
+                currentStreak: streakRes.data?.current_streak ?? 0,
+            });
+
+            // Build achievements list — show up to 4, mark earned ones
+            if (allAchievementsRes.data) {
+                const earnedIds = new Set(
+                    userAchievementsRes.data?.map((ua) => ua.achievement_id) ?? []
+                );
+
+                const iconMap: Record<string, any> = {
+                    early_bird: Zap,
+                    goal_setter: Target,
+                    streak_3: Flame,
+                    streak_7: Flame,
+                    streak_30: Trophy,
+                    first_workout: Trophy,
+                    "10k_steps": TrendingUp,
+                    calorie_crusher: Flame,
+                    distance_5k: Award,
+                };
+
+                const colorMap: Record<string, string> = {
+                    early_bird: "#3b82f6",
+                    goal_setter: "#22c55e",
+                    streak_3: "#f97316",
+                    streak_7: "#f97316",
+                    streak_30: "#eab308",
+                    first_workout: "#eab308",
+                    "10k_steps": "#22c55e",
+                    calorie_crusher: "#f97316",
+                    distance_5k: "#a855f7",
+                };
+
+                const mapped: AchievementItem[] = allAchievementsRes.data
+                    .slice(0, 4)
+                    .map((a) => ({
+                        icon: iconMap[a.key] ?? Trophy,
+                        label: a.name,
+                        color: colorMap[a.key] ?? "#888",
+                        earned: earnedIds.has(a.id),
+                    }));
+
+                setAchievements(mapped);
+            }
+
+            setLoading(false);
+        };
+
+        loadAllData();
     }, []);
 
     const handleLogout = async () => {
@@ -73,8 +202,6 @@ export default function Profile() {
                 style: "destructive",
                 onPress: async () => {
                     await supabase.auth.signOut();
-                    await AsyncStorage.removeItem("carpioFitUser");
-                    // RootLayout will auto-redirect to /auth/login
                 },
             },
         ]);
@@ -87,17 +214,10 @@ export default function Profile() {
         endurance: "Endurance Training",
     };
 
-    const achievements = [
-        { icon: Flame, label: "7 Day Streak", color: "#f97316", earned: true },
-        { icon: Trophy, label: "First 5K", color: "#eab308", earned: true },
-        { icon: Target, label: "Goal Setter", color: "#22c55e", earned: true },
-        { icon: Zap, label: "Early Bird", color: "#3b82f6", earned: false },
-    ];
-
     const stats = [
-        { label: "Workouts", value: "24", icon: TrendingUp },
-        { label: "Total Distance", value: "48.2 km", icon: Target },
-        { label: "Active Days", value: "18", icon: Award },
+        { label: "Workouts", value: statsData.totalWorkouts.toString(), icon: TrendingUp },
+        { label: "Total Distance", value: `${statsData.totalDistanceKm} km`, icon: Target },
+        { label: "Active Days", value: statsData.totalActiveDays.toString(), icon: Award },
     ];
 
     const settingsItems = [
@@ -125,8 +245,11 @@ export default function Profile() {
                     <View style={styles.headerInfo}>
                         <Text style={styles.userName}>{userData?.name || "User"}</Text>
                         <Text style={styles.userGoal}>
-                            {userData?.fitnessGoal ? fitnessGoalLabel[userData.fitnessGoal] ?? "" : ""}
+                            {userData?.fitnessGoal
+                                ? fitnessGoalLabel[userData.fitnessGoal] ?? ""
+                                : ""}
                         </Text>
+                        <Text style={styles.streakText}>🔥 {statsData.currentStreak} day streak</Text>
                     </View>
                     <TouchableOpacity style={styles.settingsBtn}>
                         <Settings size={20} color="#888" />
@@ -136,7 +259,7 @@ export default function Profile() {
                 {/* Goal Progress */}
                 <View style={styles.progressCard}>
                     <View style={styles.progressRow}>
-                        <Text style={styles.progressLabel}>Current Progress</Text>
+                        <Text style={styles.progressLabel}>Weight Progress</Text>
                         <Text style={styles.progressValue}>
                             {userData?.currentWeight || "--"} / {userData?.goalWeight || "--"} kg
                         </Text>
@@ -166,20 +289,35 @@ export default function Profile() {
                 {/* Achievements */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Achievements</Text>
-                    <View style={styles.achievementsGrid}>
-                        {achievements.map((a) => {
-                            const Icon = a.icon;
-                            return (
-                                <View key={a.label} style={[styles.achievementCard, !a.earned && { opacity: 0.4 }]}>
-                                    <View style={[styles.achievementIcon, { backgroundColor: a.earned ? "rgba(34,197,94,0.1)" : "#2a2a2a" }]}>
-                                        <Icon size={24} color={a.color} />
+                    {achievements.length === 0 ? (
+                        <View style={[styles.card, { padding: 24, alignItems: "center" }]}>
+                            <Text style={{ fontSize: 32, marginBottom: 8 }}>🏆</Text>
+                            <Text style={{ color: "#888", fontSize: 14 }}>No achievements yet</Text>
+                        </View>
+                    ) : (
+                        <View style={styles.achievementsGrid}>
+                            {achievements.map((a) => {
+                                const Icon = a.icon;
+                                return (
+                                    <View
+                                        key={a.label}
+                                        style={[styles.achievementCard, !a.earned && { opacity: 0.4 }]}
+                                    >
+                                        <View
+                                            style={[
+                                                styles.achievementIcon,
+                                                { backgroundColor: a.earned ? "rgba(34,197,94,0.1)" : "#2a2a2a" },
+                                            ]}
+                                        >
+                                            <Icon size={24} color={a.color} />
+                                        </View>
+                                        <Text style={styles.achievementLabel}>{a.label}</Text>
+                                        {a.earned && <Text style={styles.earnedText}>Earned ✓</Text>}
                                     </View>
-                                    <Text style={styles.achievementLabel}>{a.label}</Text>
-                                    {a.earned && <Text style={styles.earnedText}>Earned</Text>}
-                                </View>
-                            );
-                        })}
-                    </View>
+                                );
+                            })}
+                        </View>
+                    )}
                 </View>
 
                 {/* Personal Info */}
@@ -280,16 +418,21 @@ const styles = StyleSheet.create({
     },
     headerInfo: {
         flex: 1,
+        gap: 4,
     },
     userName: {
         color: "#fff",
         fontSize: 20,
         fontWeight: "600",
-        marginBottom: 4,
     },
     userGoal: {
         color: "#888",
         fontSize: 13,
+    },
+    streakText: {
+        color: "#f97316",
+        fontSize: 12,
+        fontWeight: "500",
     },
     settingsBtn: {
         padding: 8,
@@ -375,7 +518,7 @@ const styles = StyleSheet.create({
         fontWeight: "500",
     },
     earnedText: {
-        color: "#888",
+        color: "#22c55e",
         fontSize: 11,
     },
     card: {
