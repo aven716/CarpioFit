@@ -1,7 +1,7 @@
 import { useNavigation } from "@react-navigation/native";
 import { StatusBar } from 'expo-status-bar';
 import { Activity, Flame, Plus, Target, TrendingUp } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import {
   Dimensions,
   ScrollView,
@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
-import { usePedometer } from "../../lib/usePedometer";
+import { PedometerContext } from "./_layout";
 const { width } = Dimensions.get("window");
 
 
@@ -112,7 +112,7 @@ export default function Home() {
     { name: "Protein", consumed: 0, goal: userData?.dailyProtein ?? 150, color: "#f97316", label: "g" },
     { name: "Fat", consumed: 0, goal: userData?.dailyFat ?? 70, color: "#a855f7", label: "g" },
   ];
-  const { steps, distanceKm, caloriesBurned, goalProgress, isAvailable, isLoading } = usePedometer();
+  const { steps, distanceKm, caloriesBurned, goalProgress, isAvailable } = useContext(PedometerContext);
  
   useEffect(() => {
     if (!isAvailable || steps === 0) return;
@@ -270,11 +270,7 @@ export default function Home() {
         </Text>
         <Text style={styles.subGreeting}>Ready to crush your goals today?</Text>
       </View>
-      <View style={{ backgroundColor: "#333", padding: 10, borderRadius: 8 }}>
-        <Text style={{ color: "#fff", fontSize: 12 }}>isAvailable: {isAvailable ? "true" : "false"}</Text>
-        <Text style={{ color: "#fff", fontSize: 12 }}>isLoading: {isLoading ? "true" : "false"}</Text>
-        <Text style={{ color: "#fff", fontSize: 12 }}>Steps: {steps}</Text>
-      </View>
+     
       {/* Calorie Card */}
       <View style={[styles.card, styles.calorieCard]}>
         <View style={styles.calorieCardHeader}>

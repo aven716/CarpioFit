@@ -1,28 +1,42 @@
 import { router, Slot, usePathname } from "expo-router";
 import { Bot } from "lucide-react-native";
+import { createContext } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { usePedometer } from "../../lib/usePedometer";
 import { BottomNavigation } from "../components/BottomNavigation";
+
+export const PedometerContext = createContext({
+    steps: 0,
+    distanceKm: 0,
+    caloriesBurned: 0,
+    goalProgress: 0,
+    isAvailable: false,
+    isLoading: true,
+    stepGoal: 10000,
+});
 
 export default function TabsLayout() {
     const pathname = usePathname();
     const isAICoach = pathname === "/tabs/ai-coach";
+    const pedometer = usePedometer();
 
     return (
-        <View style={styles.container}>
-            <Slot />
-            <BottomNavigation />
+        <PedometerContext.Provider value={pedometer}>
+            <View style={styles.container}>
+                <Slot />
+                <BottomNavigation />
 
-            {/* Floating AI Coach Button — hidden when already on AI Coach */}
-            {!isAICoach && (
-                <TouchableOpacity
-                    style={styles.fab}
-                    onPress={() => router.push("/tabs/ai-coach")}
-                    activeOpacity={0.85}
-                >
-                    <Bot size={24} color="#fff" />
-                </TouchableOpacity>
-            )}
-        </View>
+                {!isAICoach && (
+                    <TouchableOpacity
+                        style={styles.fab}
+                        onPress={() => router.push("/tabs/ai-coach")}
+                        activeOpacity={0.85}
+                    >
+                        <Bot size={24} color="#fff" />
+                    </TouchableOpacity>
+                )}
+            </View>
+        </PedometerContext.Provider>
     );
 }
 
