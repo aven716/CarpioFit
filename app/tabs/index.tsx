@@ -1,7 +1,7 @@
 import { useNavigation } from "@react-navigation/native";
 import { StatusBar } from 'expo-status-bar';
 import { Activity, Flame, Plus, Target, TrendingUp } from "lucide-react-native";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   Dimensions,
   ScrollView,
@@ -12,8 +12,8 @@ import {
 } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { PedometerContext } from "./_layout";
-const { width } = Dimensions.get("window");
 
+const { width } = Dimensions.get("window");
 
 interface UserData {
   name: string;
@@ -103,6 +103,9 @@ export default function Home() {
     totalActiveDays: 0,
   });
   const [caloriesConsumed] = useState(0);
+  const lastSyncedSteps = useRef(0);
+
+  const { steps, distanceKm, caloriesBurned, goalProgress, isAvailable } = useContext(PedometerContext);
 
   const calorieGoal = userData?.dailyCalories ?? 2000;
   const caloriesRemaining = calorieGoal - caloriesConsumed;
@@ -112,10 +115,11 @@ export default function Home() {
     { name: "Protein", consumed: 0, goal: userData?.dailyProtein ?? 150, color: "#f97316", label: "g" },
     { name: "Fat", consumed: 0, goal: userData?.dailyFat ?? 70, color: "#a855f7", label: "g" },
   ];
-  const { steps, distanceKm, caloriesBurned, goalProgress, isAvailable } = useContext(PedometerContext);
- 
+
+  // Sync steps to Supabase every 10 steps
   useEffect(() => {
     if (!isAvailable || steps === 0) return;
+    if (steps - lastSyncedSteps.current < 10) return;
 
     const syncSteps = async () => {
       const { data: authData } = await supabase.auth.getUser();
@@ -124,21 +128,24 @@ export default function Home() {
 
       const today = new Date().toISOString().split("T")[0];
 
-      await supabase.from("daily_stats").upsert({
+      const { error } = await supabase.from("daily_stats").upsert({
         user_id: user.id,
         date: today,
         steps: steps,
         calories_burned: caloriesBurned,
         distance_km: distanceKm,
-      });
+      }, { onConflict: "user_id,date" });
+
+      if (!error) {
+        lastSyncedSteps.current = steps;
+      }
     };
 
-    if (steps % 20 === 0) syncSteps();
+    syncSteps();
   }, [steps]);
- 
- 
+
+  // Load all profile/workout/streak data
   useEffect(() => {
-    
     const loadAllData = async () => {
       const { data: authData } = await supabase.auth.getUser();
       const user = authData.user;
@@ -146,7 +153,6 @@ export default function Home() {
 
       const today = new Date().toISOString().split("T")[0];
 
-      // Fetch all data in parallel
       const [profileRes, dailyStatsRes, workoutsRes, streakRes] = await Promise.all([
         supabase
           .from("profiles")
@@ -175,7 +181,6 @@ export default function Home() {
           .single(),
       ]);
 
-      // Set profile
       if (profileRes.data) {
         setUserData({
           name: profileRes.data.first_name,
@@ -190,7 +195,6 @@ export default function Home() {
         });
       }
 
-      // Set daily stats (if no row yet for today, defaults stay 0)
       if (dailyStatsRes.data) {
         setDailyStats({
           caloriesBurned: Number(dailyStatsRes.data.calories_burned) ?? 0,
@@ -200,7 +204,6 @@ export default function Home() {
         });
       }
 
-      // Set today's workouts
       if (workoutsRes.data && workoutsRes.data.length > 0) {
         const formatted: WorkoutItem[] = workoutsRes.data.map((w) => ({
           name: w.name,
@@ -214,7 +217,6 @@ export default function Home() {
         setTodayWorkouts(formatted);
       }
 
-      // Set streak
       if (streakRes.data) {
         setStreakData({
           currentStreak: streakRes.data.current_streak ?? 0,
@@ -225,7 +227,6 @@ export default function Home() {
     };
 
     loadAllData();
-    
   }, []);
 
   const statsCards = [
@@ -270,7 +271,7 @@ export default function Home() {
         </Text>
         <Text style={styles.subGreeting}>Ready to crush your goals today?</Text>
       </View>
-     
+
       {/* Calorie Card */}
       <View style={[styles.card, styles.calorieCard]}>
         <View style={styles.calorieCardHeader}>
@@ -338,7 +339,37 @@ export default function Home() {
       </View>
 
       {/* Streak Card */}
-     
+      <View style={[styles.card, styles.darkCard]}>
+        <View style={styles.cardHeader}>
+          <View style={[styles.iconCircle, { backgroundColor: "rgba(249,115,22,0.1)" }]}>
+            <Text style={{ fontSize: 20 }}>🔥</Text>
+          </View>
+          <View>
+            <Text style={styles.cardTitle}>Current Streak</Text>
+            <Text style={styles.cardSub}>{streakData.totalActiveDays} total active days</Text>
+          </View>
+        </View>
+        <View style={styles.weightRow}>
+          <View>
+            <Text style={styles.weightValue}>{streakData.currentStreak}</Text>
+            <Text style={styles.weightLabel}>Current</Text>
+          </View>
+          <TrendingUp size={24} color="#f97316" />
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={styles.weightValue}>{streakData.longestStreak}</Text>
+            <Text style={styles.weightLabel}>Best</Text>
+          </View>
+        </View>
+        <ProgressBar
+          value={
+            streakData.longestStreak > 0
+              ? (streakData.currentStreak / streakData.longestStreak) * 100
+              : 0
+          }
+          trackColor="rgba(255,255,255,0.1)"
+          fillColor="#f97316"
+        />
+      </View>
 
       {/* Weight Goal Card */}
       <View style={[styles.card, styles.darkCard]}>
@@ -452,7 +483,7 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: 24,
-    color: "#fff",
+    color: "#ffffff",
     fontWeight: "600",
   },
   subGreeting: {
@@ -627,7 +658,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   sectionTitle: {
-    color: "#fff",
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
   },

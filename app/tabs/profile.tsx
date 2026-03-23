@@ -399,6 +399,8 @@ const styles = StyleSheet.create({
         backgroundColor: "#1a1a1a",
         padding: 24,
         paddingTop: 48,
+        borderRadius: 16,
+        marginTop:40,
     },
     headerTop: {
         flexDirection: "row",
@@ -438,7 +440,7 @@ const styles = StyleSheet.create({
         padding: 8,
     },
     progressCard: {
-        backgroundColor: "#2a2a2a",
+        backgroundColor: "#1a3329",
         borderRadius: 12,
         padding: 16,
         gap: 10,
@@ -463,6 +465,7 @@ const styles = StyleSheet.create({
     },
     section: {
         gap: 12,
+        borderRadius: 16,
     },
     sectionTitle: {
         color: "#fff",

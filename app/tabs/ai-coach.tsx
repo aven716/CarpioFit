@@ -13,7 +13,7 @@ import {
     View
 } from "react-native";
 
-const GROQ_API_KEY = "YOUR_GROQ_API_KEY_HERE";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = "llama-3.1-8b-instant";
 
 const DEFAULT_SYSTEM_PROMPT = `You are CarpioFit AI, a professional fitness and nutrition coach.
@@ -53,7 +53,7 @@ function TypingDots() {
             {[0, 1, 2].map((i) => (
                 <View key={i} style={{
                     width: 8, height: 8, borderRadius: 4,
-                    backgroundColor: dot > i ? "#22c55e" : "#444",
+                    backgroundColor: dot > i ? "#13a549c8" : "#444",
                 }} />
             ))}
         </View>

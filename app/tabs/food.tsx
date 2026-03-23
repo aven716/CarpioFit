@@ -1,14 +1,12 @@
-import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
     Apple,
-    ChevronLeft,
     Coffee,
     Moon,
     Plus,
     Search,
     Sun,
-    X,
+    X
 } from "lucide-react-native";
 import { useState } from "react";
 import {
@@ -44,10 +42,10 @@ const mockFoodDatabase = [
 ];
 
 const mealTypes = [
-    { id: "breakfast", name: "Breakfast", icon: Coffee, color: "#eab308" },
-    { id: "lunch", name: "Lunch", icon: Sun, color: "#f97316" },
-    { id: "dinner", name: "Dinner", icon: Moon, color: "#3b82f6" },
-    { id: "snack", name: "Snacks", icon: Apple, color: "#22c55e" },
+    { id: "breakfast", name: "Breakfast", icon: Coffee, color: "#eab308", tint: "rgba(234,179,8,0.10)", border: "rgba(234,179,8,0.22)" },
+    { id: "lunch", name: "Lunch", icon: Sun, color: "#f97316", tint: "rgba(249,115,22,0.10)", border: "rgba(249,115,22,0.22)" },
+    { id: "dinner", name: "Dinner", icon: Moon, color: "#3b82f6", tint: "rgba(59,130,246,0.10)", border: "rgba(59,130,246,0.22)" },
+    { id: "snack", name: "Snacks", icon: Apple, color: "#22c55e", tint: "rgba(34,197,94,0.10)", border: "rgba(34,197,94,0.22)" },
 ];
 
 export default function FoodLogging() {
@@ -92,9 +90,6 @@ export default function FoodLogging() {
             {/* Sticky Header */}
             <View style={styles.header}>
                 <View style={styles.headerTop}>
-                    <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                        <ChevronLeft size={22} color="#fff" />
-                    </TouchableOpacity>
                     <View>
                         <Text style={styles.headerTitle}>Food Logging</Text>
                         <Text style={styles.headerSub}>Track your daily intake</Text>
@@ -151,14 +146,29 @@ export default function FoodLogging() {
 
                             {mealItems.length > 0 ? (
                                 mealItems.map((item) => (
-                                    <View key={item.id} style={styles.mealCard}>
+                                    <View
+                                        key={item.id}
+                                        style={[
+                                            styles.mealCard,
+                                            {
+                                                backgroundColor: mealType.tint,
+                                                borderColor: mealType.border,
+                                                borderWidth: 1,
+                                            },
+                                        ]}
+                                    >
+                                        {/* Accent left bar */}
+                                        <View style={[styles.accentBar, { backgroundColor: mealType.color }]} />
+
                                         <View style={styles.mealCardLeft}>
                                             <Text style={styles.mealName}>{item.name}</Text>
                                             <Text style={styles.mealMacros}>
                                                 P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g
                                             </Text>
                                         </View>
-                                        <Text style={styles.mealKcal}>{item.calories}</Text>
+                                        <Text style={[styles.mealKcal, { color: mealType.color }]}>
+                                            {item.calories}
+                                        </Text>
                                     </View>
                                 ))
                             ) : (
@@ -196,14 +206,20 @@ export default function FoodLogging() {
                                     key={type.id}
                                     style={[
                                         styles.mealTypeBtn,
-                                        selectedMeal === type.id && styles.mealTypeBtnActive,
+                                        selectedMeal === type.id && {
+                                            backgroundColor: type.tint,
+                                            borderColor: type.color,
+                                        },
                                     ]}
                                     onPress={() => setSelectedMeal(type.id)}
                                 >
                                     <Text
                                         style={[
                                             styles.mealTypeBtnText,
-                                            selectedMeal === type.id && styles.mealTypeBtnTextActive,
+                                            selectedMeal === type.id && {
+                                                color: type.color,
+                                                fontWeight: "700",
+                                            },
                                         ]}
                                     >
                                         {type.name}
@@ -297,7 +313,7 @@ const styles = StyleSheet.create({
 
     // Summary card
     summaryCard: {
-        backgroundColor: "#2a2a2a",
+        backgroundColor: "#1a3329",
         borderRadius: 16,
         padding: 16,
         gap: 12,
@@ -336,7 +352,7 @@ const styles = StyleSheet.create({
         justifyContent: "space-around",
         paddingTop: 12,
         borderTopWidth: 1,
-        borderTopColor: "#3a3a3a",
+        borderTopColor: "#26d173",
     },
     macroItem: {
         alignItems: "center",
@@ -373,7 +389,7 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     mealTitle: {
-        color: "#fff",
+        color: "#ffffff",
         fontSize: 15,
         fontWeight: "600",
     },
@@ -382,12 +398,23 @@ const styles = StyleSheet.create({
         fontSize: 13,
     },
     mealCard: {
-        backgroundColor: "#1a1a1a",
         borderRadius: 14,
         padding: 14,
+        paddingLeft: 18,
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
+        overflow: "hidden",
+        position: "relative",
+    },
+    accentBar: {
+        position: "absolute",
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 4,
+        borderTopLeftRadius: 14,
+        borderBottomLeftRadius: 14,
     },
     mealCardLeft: {
         flex: 1,
@@ -400,11 +427,10 @@ const styles = StyleSheet.create({
         marginBottom: 4,
     },
     mealMacros: {
-        color: "#888",
+        color: "#aaa",
         fontSize: 12,
     },
     mealKcal: {
-        color: "#fff",
         fontSize: 15,
         fontWeight: "600",
     },
@@ -463,18 +489,10 @@ const styles = StyleSheet.create({
         borderColor: "#3a3a3a",
         backgroundColor: "#2a2a2a",
     },
-    mealTypeBtnActive: {
-        backgroundColor: "#22c55e",
-        borderColor: "#22c55e",
-    },
     mealTypeBtnText: {
         color: "#888",
         fontSize: 13,
         fontWeight: "500",
-    },
-    mealTypeBtnTextActive: {
-        color: "#0a0a0a",
-        fontWeight: "700",
     },
     searchContainer: {
         flexDirection: "row",

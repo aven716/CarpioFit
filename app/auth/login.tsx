@@ -51,7 +51,7 @@ export default function Login() {
                         <Text style={styles.logoEmoji}>🏋️</Text>
                     </View>
                     <Text style={styles.appName}>CarpioFit</Text>
-                    <Text style={styles.tagline}>Welcome back! Ready to crush it?</Text>
+                    <Text style={styles.tagline}>Welcome back! Ready to crush it? BAGO TO AHHAHHAHA</Text>
                 </View>
 
                 {/* Card */}

@@ -28,7 +28,7 @@ export function BottomNavigation() {
                     >
                         <Icon
                             size={20}
-                            color={isActive ? "#22c55e" : "#888"}
+                            color={isActive ? "#5dc736" : "#888"}
                             strokeWidth={isActive ? 2.5 : 1.5}
                         />
                         <Text style={[styles.label, isActive && styles.labelActive]}>
@@ -48,18 +48,22 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         height: 64,
-        backgroundColor: "#1a1a1a",
+        backgroundColor: "#1a3329",
+        borderWidth: 1,
         borderTopWidth: 1,
-        borderTopColor: "#2a2a2a",
+        borderColor: "#60a74c6c",
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-around",
         paddingHorizontal: 8,
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: -2 },
+        shadowOffset: { width: -1, height: -2 },
         shadowOpacity: 0.3,
         shadowRadius: 4,
         elevation: 8,
+        borderRadius: 30,
+        marginHorizontal: 10,
+        marginBottom: 10,
     },
     navItem: {
         flex: 1,
@@ -73,7 +77,7 @@ const styles = StyleSheet.create({
         color: "#888",
     },
     labelActive: {
-        color: "#22c55e",
+        color: "#abee92",
     },
 });
 

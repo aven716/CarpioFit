@@ -14,7 +14,7 @@ import {
 } from "react-native";
 
 const { width } = Dimensions.get("window");
-const DAY_SIZE = Math.floor((width - 32 - 48) / 7); // 7 cols, padding accounted
+const DAY_SIZE = Math.floor((width - 32 - 48) / 7);
 
 interface WorkoutEvent {
     id: string;
@@ -26,10 +26,10 @@ interface WorkoutEvent {
 }
 
 const workoutTypeConfig = {
-    strength: { color: "#3b82f6", bgColor: "rgba(59,130,246,0.15)", icon: Dumbbell, label: "Strength" },
-    cardio: { color: "#f97316", bgColor: "rgba(249,115,22,0.15)", icon: Heart, label: "Cardio" },
-    rest: { color: "#6b7280", bgColor: "rgba(107,114,128,0.15)", icon: Moon, label: "Rest" },
-    flexibility: { color: "#22c55e", bgColor: "rgba(34,197,94,0.15)", icon: Heart, label: "Flexibility" },
+    strength: { color: "#3b82f6", tint: "rgba(59,130,246,0.10)", border: "rgba(59,130,246,0.22)", bgColor: "rgba(59,130,246,0.15)", icon: Dumbbell, label: "Strength" },
+    cardio: { color: "#f97316", tint: "rgba(249,115,22,0.10)", border: "rgba(249,115,22,0.22)", bgColor: "rgba(249,115,22,0.15)", icon: Heart, label: "Cardio" },
+    rest: { color: "#6b7280", tint: "rgba(107,114,128,0.10)", border: "rgba(107,114,128,0.22)", bgColor: "rgba(107,114,128,0.15)", icon: Moon, label: "Rest" },
+    flexibility: { color: "#22c55e", tint: "rgba(34,197,94,0.10)", border: "rgba(34,197,94,0.22)", bgColor: "rgba(34,197,94,0.15)", icon: Heart, label: "Flexibility" },
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -53,7 +53,6 @@ export default function ExerciseCalendar() {
         time: "",
     });
 
-    // Calendar helpers
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -103,7 +102,6 @@ export default function ExerciseCalendar() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Month Navigator */}
                 <View style={styles.monthNav}>
                     <TouchableOpacity style={styles.navBtn} onPress={() => setCurrentDate(new Date(year, month - 1))}>
                         <ChevronLeft size={20} color="#fff" />
@@ -119,14 +117,12 @@ export default function ExerciseCalendar() {
 
                 {/* Calendar Grid */}
                 <View style={styles.calendarCard}>
-                    {/* Day headers */}
                     <View style={styles.dayHeaderRow}>
                         {DAYS.map((d) => (
                             <Text key={d} style={styles.dayHeader}>{d}</Text>
                         ))}
                     </View>
 
-                    {/* Grid */}
                     <View style={styles.grid}>
                         {Array.from({ length: startingDayOfWeek }).map((_, i) => (
                             <View key={`empty-${i}`} style={styles.dayCell} />
@@ -176,14 +172,27 @@ export default function ExerciseCalendar() {
                             const config = workoutTypeConfig[workout.type];
                             const Icon = config.icon;
                             return (
-                                <View key={workout.id} style={styles.workoutCard}>
+                                <View
+                                    key={workout.id}
+                                    style={[
+                                        styles.workoutCard,
+                                        {
+                                            backgroundColor: config.tint,
+                                            borderColor: config.border,
+                                            borderWidth: 1,
+                                        },
+                                    ]}
+                                >
+                                    {/* Accent bar */}
+                                    <View style={[styles.accentBar, { backgroundColor: config.color }]} />
+
                                     <View style={[styles.workoutIconCircle, { backgroundColor: config.bgColor }]}>
                                         <Icon size={20} color={config.color} />
                                     </View>
                                     <View style={styles.workoutInfo}>
                                         <Text style={styles.workoutName}>{workout.name}</Text>
-                                        <Text style={styles.workoutMeta}>
-                                            {workout.time} • {workout.duration} min • {config.label}
+                                        <Text style={[styles.workoutMeta, { color: config.color }]}>
+                                            {workout.time}{workout.duration > 0 ? ` • ${workout.duration} min` : ""} • {config.label}
                                         </Text>
                                     </View>
                                 </View>
@@ -205,11 +214,21 @@ export default function ExerciseCalendar() {
                             const Icon = config.icon;
                             const count = workouts.filter((w) => w.type === type).length;
                             return (
-                                <View key={type} style={styles.summaryCard}>
+                                <View
+                                    key={type}
+                                    style={[
+                                        styles.summaryCard,
+                                        {
+                                            backgroundColor: config.tint,
+                                            borderColor: config.border,
+                                            borderWidth: 1,
+                                        },
+                                    ]}
+                                >
                                     <View style={[styles.summaryIcon, { backgroundColor: config.bgColor }]}>
                                         <Icon size={16} color={config.color} />
                                     </View>
-                                    <Text style={styles.summaryCount}>{count}</Text>
+                                    <Text style={[styles.summaryCount, { color: config.color }]}>{count}</Text>
                                     <Text style={styles.summaryLabel}>{config.label}</Text>
                                 </View>
                             );
@@ -249,17 +268,30 @@ export default function ExerciseCalendar() {
 
                         <Text style={styles.inputLabel}>Type</Text>
                         <View style={styles.typeGrid}>
-                            {WORKOUT_TYPES.map((type) => (
-                                <TouchableOpacity
-                                    key={type}
-                                    style={[styles.typeBtn, newWorkout.type === type && { backgroundColor: workoutTypeConfig[type].color, borderColor: workoutTypeConfig[type].color }]}
-                                    onPress={() => setNewWorkout({ ...newWorkout, type })}
-                                >
-                                    <Text style={[styles.typeBtnText, newWorkout.type === type && styles.typeBtnTextActive]}>
-                                        {workoutTypeConfig[type].label}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
+                            {WORKOUT_TYPES.map((type) => {
+                                const cfg = workoutTypeConfig[type];
+                                const isActive = newWorkout.type === type;
+                                return (
+                                    <TouchableOpacity
+                                        key={type}
+                                        style={[
+                                            styles.typeBtn,
+                                            isActive && {
+                                                backgroundColor: cfg.tint,
+                                                borderColor: cfg.color,
+                                            },
+                                        ]}
+                                        onPress={() => setNewWorkout({ ...newWorkout, type })}
+                                    >
+                                        <Text style={[
+                                            styles.typeBtnText,
+                                            isActive && { color: cfg.color, fontWeight: "700" },
+                                        ]}>
+                                            {cfg.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
 
                         <View style={styles.row}>
@@ -342,36 +374,27 @@ const styles = StyleSheet.create({
     monthName: { color: "#fff", fontSize: 16, fontWeight: "600" },
 
     // Body
-    body: { padding: 16, gap: 24, paddingBottom: 100 },
+    body: { padding: 16, gap: 24, paddingBottom: 100, backgroundColor: "#0a0a0a" },
 
     // Calendar
     calendarCard: {
-        backgroundColor: "#1a1a1a",
+        backgroundColor: "#1a3329",
         borderRadius: 20,
         padding: 12,
     },
-    dayHeaderRow: {
-        flexDirection: "row",
-        marginBottom: 6,
-    },
+    dayHeaderRow: { flexDirection: "row", marginBottom: 6 },
     dayHeader: {
-        flex: 1,
-        textAlign: "center",
-        color: "#666",
-        fontSize: 11,
-        fontWeight: "600",
+        flex: 1, textAlign: "center",
+        color: "#666", fontSize: 11, fontWeight: "600",
     },
-    grid: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-    },
+    grid: { flexDirection: "row", flexWrap: "wrap" },
     dayCell: {
         width: `${100 / 7}%`,
-        aspectRatio: 1,
+        height: 48,
         padding: 2,
         alignItems: "center",
         justifyContent: "flex-start",
-        paddingTop: 4,
+        paddingTop: 5,
         borderRadius: 8,
     },
     dayCellToday: {
@@ -379,32 +402,38 @@ const styles = StyleSheet.create({
         borderWidth: 1.5,
         borderColor: "#22c55e",
     },
-    dayCellSelected: {
-        backgroundColor: "#2a2a2a",
-    },
+    dayCellSelected: { backgroundColor: "#2a2a2a" },
     dayNum: { color: "#ccc", fontSize: 12, fontWeight: "500" },
     dayNumToday: { color: "#22c55e", fontWeight: "700" },
     dotRow: {
-        flexDirection: "row",
-        gap: 2,
-        marginTop: 2,
-        flexWrap: "wrap",
-        justifyContent: "center",
+        flexDirection: "row", gap: 2, marginTop: 2,
+        flexWrap: "wrap", justifyContent: "center",
     },
     dot: { width: 5, height: 5, borderRadius: 3 },
 
     // Sections
     section: { gap: 10 },
-    sectionTitle: { color: "#fff", fontSize: 16, fontWeight: "600" },
+    sectionTitle: { color: "#ffffff", fontSize: 16, fontWeight: "600" },
 
     // Workout cards
     workoutCard: {
-        backgroundColor: "#1a1a1a",
         borderRadius: 14,
         padding: 14,
+        paddingLeft: 18,
         flexDirection: "row",
         alignItems: "center",
         gap: 12,
+        overflow: "hidden",
+        position: "relative",
+    },
+    accentBar: {
+        position: "absolute",
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 4,
+        borderTopLeftRadius: 14,
+        borderBottomLeftRadius: 14,
     },
     workoutIconCircle: {
         width: 44, height: 44, borderRadius: 22,
@@ -412,7 +441,7 @@ const styles = StyleSheet.create({
     },
     workoutInfo: { flex: 1 },
     workoutName: { color: "#fff", fontSize: 14, fontWeight: "600", marginBottom: 3 },
-    workoutMeta: { color: "#888", fontSize: 12 },
+    workoutMeta: { fontSize: 12 },
     emptyCard: {
         backgroundColor: "#1a1a1a", borderRadius: 14,
         padding: 24, alignItems: "center",
@@ -422,14 +451,17 @@ const styles = StyleSheet.create({
     // Summary
     summaryGrid: { flexDirection: "row", gap: 10 },
     summaryCard: {
-        flex: 1, backgroundColor: "#1a1a1a",
-        borderRadius: 14, padding: 12, alignItems: "center", gap: 4,
+        flex: 1,
+        borderRadius: 14,
+        padding: 12,
+        alignItems: "center",
+        gap: 4,
     },
     summaryIcon: {
         width: 36, height: 36, borderRadius: 18,
         alignItems: "center", justifyContent: "center", marginBottom: 4,
     },
-    summaryCount: { color: "#fff", fontSize: 20, fontWeight: "700" },
+    summaryCount: { fontSize: 20, fontWeight: "700" },
     summaryLabel: { color: "#888", fontSize: 10, textAlign: "center" },
 
     // Modal
@@ -457,16 +489,13 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16,
     },
     dateDisplayText: { color: "#fff", fontSize: 14 },
-    typeGrid: {
-        flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16,
-    },
+    typeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
     typeBtn: {
         paddingHorizontal: 16, paddingVertical: 8,
         borderRadius: 8, borderWidth: 1, borderColor: "#3a3a3a",
         backgroundColor: "#2a2a2a",
     },
     typeBtnText: { color: "#888", fontSize: 13, fontWeight: "500" },
-    typeBtnTextActive: { color: "#fff", fontWeight: "700" },
     row: { flexDirection: "row" },
     submitBtn: {
         backgroundColor: "#22c55e", borderRadius: 14,
