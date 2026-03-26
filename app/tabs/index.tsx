@@ -102,7 +102,8 @@ export default function Home() {
     longestStreak: 0,
     totalActiveDays: 0,
   });
-  const [caloriesConsumed] = useState(0);
+  const [caloriesConsumed, setCaloriesConsumed] = useState(0);
+  const [macrosConsumed, setMacrosConsumed] = useState({ protein: 0, carbs: 0, fat: 0 });
   const lastSyncedSteps = useRef(0);
 
   const { steps, distanceKm, caloriesBurned, goalProgress, isAvailable } = useContext(PedometerContext);
@@ -111,12 +112,11 @@ export default function Home() {
   const caloriesRemaining = calorieGoal - caloriesConsumed;
 
   const macros = [
-    { name: "Carbs", consumed: 0, goal: userData?.dailyCarbs ?? 250, color: "#3b82f6", label: "g" },
-    { name: "Protein", consumed: 0, goal: userData?.dailyProtein ?? 150, color: "#f97316", label: "g" },
-    { name: "Fat", consumed: 0, goal: userData?.dailyFat ?? 70, color: "#a855f7", label: "g" },
+    { name: "Carbs", consumed: macrosConsumed.carbs, goal: userData?.dailyCarbs ?? 250, color: "#3b82f6", label: "g" },
+    { name: "Protein", consumed: macrosConsumed.protein, goal: userData?.dailyProtein ?? 150, color: "#f97316", label: "g" },
+    { name: "Fat", consumed: macrosConsumed.fat, goal: userData?.dailyFat ?? 70, color: "#a855f7", label: "g" },
   ];
 
-  // Sync steps to Supabase every 10 steps
   useEffect(() => {
     if (!isAvailable || steps === 0) return;
     if (steps - lastSyncedSteps.current < 10) return;
@@ -144,7 +144,6 @@ export default function Home() {
     syncSteps();
   }, [steps]);
 
-  // Load all profile/workout/streak data
   useEffect(() => {
     const loadAllData = async () => {
       const { data: authData } = await supabase.auth.getUser();
@@ -153,7 +152,7 @@ export default function Home() {
 
       const today = new Date().toISOString().split("T")[0];
 
-      const [profileRes, dailyStatsRes, workoutsRes, streakRes] = await Promise.all([
+      const [profileRes, dailyStatsRes, workoutsRes, streakRes, foodLogsRes] = await Promise.all([
         supabase
           .from("profiles")
           .select("first_name, age, weight_kg, goal_weight, goal, daily_calories, daily_protein, daily_fat, daily_carbs")
@@ -179,6 +178,12 @@ export default function Home() {
           .select("current_streak, longest_streak, total_active_days")
           .eq("user_id", user.id)
           .single(),
+
+        // ✅ NEW QUERY
+        supabase
+          .from("food_logs")
+          .select("calories, protein_g, carbs_g, fat_g, logged_at")
+          .eq("user_id", user.id)
       ]);
 
       if (profileRes.data) {
@@ -201,6 +206,35 @@ export default function Home() {
           steps: dailyStatsRes.data.steps ?? 0,
           activeMinutes: dailyStatsRes.data.active_minutes ?? 0,
           distanceKm: Number(dailyStatsRes.data.distance_km) ?? 0,
+        });
+        
+      }
+      
+      if (foodLogsRes.data) {
+        const todayStart = new Date(today);
+        const tomorrow = new Date(todayStart);
+        tomorrow.setDate(todayStart.getDate() + 1);
+
+        const todayLogs = foodLogsRes.data.filter((log) => {
+          const logDate = new Date(log.logged_at);
+          return logDate >= todayStart && logDate < tomorrow;
+        });
+
+        const totals = todayLogs.reduce(
+          (acc, item) => ({
+            calories: acc.calories + Number(item.calories || 0),
+            protein: acc.protein + Number(item.protein_g || 0),
+            carbs: acc.carbs + Number(item.carbs_g || 0),
+            fat: acc.fat + Number(item.fat_g || 0),
+          }),
+          { calories: 0, protein: 0, carbs: 0, fat: 0 }
+        );
+
+        setCaloriesConsumed(totals.calories);
+        setMacrosConsumed({
+          protein: totals.protein,
+          carbs: totals.carbs,
+          fat: totals.fat,
         });
       }
 
@@ -264,7 +298,6 @@ export default function Home() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <StatusBar style="light" />
 
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.greeting}>
           Hey, {userData?.name || "there"}! 👋

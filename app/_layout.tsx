@@ -3,7 +3,6 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
 import { supabase } from "../lib/supabase";
-import SplashScreenComponent from "./components/SplashScreenComponent";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -11,7 +10,6 @@ export default function RootLayout() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
-  const [showSplash, setShowSplash] = useState(true);
 
   const router = useRouter();
   const segments = useSegments();
@@ -84,11 +82,6 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loading, session, hasProfile]);
-
-  // ✅ All hooks above — early returns below
-  if (showSplash) {
-    return <SplashScreenComponent onFinish={() => setShowSplash(false)} />;
-  }
 
   if (loading || (session && hasProfile === null)) {
     return <View style={{ flex: 1, backgroundColor: "#0a0a0a" }} />;
