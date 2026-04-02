@@ -1,5 +1,6 @@
+import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ChevronLeft, ChevronRight, Dumbbell, Edit2, Heart, Moon, Plus, RefreshCw, Save, Trash2, TrendingUp, X } from "lucide-react-native";
+import { CheckCircle, ChevronLeft, ChevronRight, Dumbbell, Edit2, Heart, Moon, Plus, RefreshCw, Save, Trash2, TrendingUp, X } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
     Alert,
@@ -44,6 +45,75 @@ const workoutTypeConfig = {
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const WORKOUT_TYPES = ["strength", "cardio", "flexibility", "rest"] as const;
 const toDateStr = (d: Date) => d.toISOString().split("T")[0];
+
+// ─── Infer workout type from exercise name / focus ─
+function inferWorkoutType(name: string, focus: string): "strength" | "cardio" | "flexibility" | "rest" {
+    const lower = (name + " " + focus).toLowerCase();
+    if (/run|jog|cycle|bike|swim|cardio|hiit|jump|rope|row|elliptic/.test(lower)) return "cardio";
+    if (/stretch|yoga|flex|mobility|foam/.test(lower)) return "flexibility";
+    return "strength";
+}
+
+// ─── Log exercises to workouts table ─────────
+async function logExercisesToWorkouts(
+    userId: string,
+    exercises: Exercise[],
+    focus: string,
+    dateStr: string,
+    onSuccess: () => void
+) {
+    if (exercises.length === 0) {
+        Alert.alert("Nothing to log", "This day has no exercises.");
+        return;
+    }
+
+    try {
+        const rows = exercises.map((ex) => ({
+            user_id: userId,
+            date: dateStr,
+            name: ex.name,
+            type: inferWorkoutType(ex.name, focus),
+            duration_minutes: ex.duration
+                ? parseInt(ex.duration.replace(/[^0-9]/g, "")) || 30
+                : 30,
+            completed: true,
+        }));
+
+        const { error } = await supabase.from("workouts").insert(rows);
+        if (error) throw error;
+
+        Alert.alert("✅ Logged!", `${exercises.length} exercise${exercises.length > 1 ? "s" : ""} added to your calendar.`);
+        onSuccess();
+    } catch (err: any) {
+        Alert.alert("Error", err?.message ?? "Could not log workouts.");
+    }
+}
+
+async function logSingleExercise(
+    userId: string,
+    exercise: Exercise,
+    focus: string,
+    dateStr: string,
+    onSuccess: () => void
+) {
+    try {
+        const { error } = await supabase.from("workouts").insert({
+            user_id: userId,
+            date: dateStr,
+            name: exercise.name,
+            type: inferWorkoutType(exercise.name, focus),
+            duration_minutes: exercise.duration
+                ? parseInt(exercise.duration.replace(/[^0-9]/g, "")) || 30
+                : 30,
+            completed: true,
+        });
+        if (error) throw error;
+        Alert.alert("✅ Logged!", `${exercise.name} added to your calendar.`);
+        onSuccess();
+    } catch (err: any) {
+        Alert.alert("Error", err?.message ?? "Could not log workout.");
+    }
+}
 
 // ─── Simple Line Chart ────────────────────────
 function SimpleLineChart({ data, valueKey, color }: {
@@ -226,53 +296,22 @@ function ExerciseEditModal({
                 <View style={es.sheet}>
                     <View style={es.sheetHeader}>
                         <Text style={es.sheetTitle}>{exercise?.name ? "Edit Exercise" : "Add Exercise"}</Text>
-                        <TouchableOpacity onPress={onClose}>
-                            <X size={20} color="#888" />
-                        </TouchableOpacity>
+                        <TouchableOpacity onPress={onClose}><X size={20} color="#888" /></TouchableOpacity>
                     </View>
-
                     <Text style={es.label}>Exercise Name *</Text>
-                    <TextInput
-                        style={es.input}
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="e.g., Push-ups"
-                        placeholderTextColor="#555"
-                    />
-
+                    <TextInput style={es.input} value={name} onChangeText={setName} placeholder="e.g., Push-ups" placeholderTextColor="#555" />
                     <View style={{ flexDirection: "row", gap: 10 }}>
                         <View style={{ flex: 1 }}>
                             <Text style={es.label}>Sets</Text>
-                            <TextInput
-                                style={es.input}
-                                value={sets}
-                                onChangeText={setSets}
-                                placeholder="3"
-                                placeholderTextColor="#555"
-                                keyboardType="numeric"
-                            />
+                            <TextInput style={es.input} value={sets} onChangeText={setSets} placeholder="3" placeholderTextColor="#555" keyboardType="numeric" />
                         </View>
                         <View style={{ flex: 1 }}>
                             <Text style={es.label}>Reps</Text>
-                            <TextInput
-                                style={es.input}
-                                value={reps}
-                                onChangeText={setReps}
-                                placeholder="12-15"
-                                placeholderTextColor="#555"
-                            />
+                            <TextInput style={es.input} value={reps} onChangeText={setReps} placeholder="12-15" placeholderTextColor="#555" />
                         </View>
                     </View>
-
                     <Text style={es.label}>Duration (optional)</Text>
-                    <TextInput
-                        style={es.input}
-                        value={duration}
-                        onChangeText={setDuration}
-                        placeholder="e.g., 20 min"
-                        placeholderTextColor="#555"
-                    />
-
+                    <TextInput style={es.input} value={duration} onChangeText={setDuration} placeholder="e.g., 20 min" placeholderTextColor="#555" />
                     <TouchableOpacity style={es.saveBtn} onPress={handleSave}>
                         <Save size={16} color="#fff" />
                         <Text style={es.saveBtnText}>Save Exercise</Text>
@@ -283,15 +322,19 @@ function ExerciseEditModal({
     );
 }
 
-// ─── AI Plan Day Card (editable) ──────────────
+// ─── AI Plan Day Card (editable + loggable) ───
 function AIPlanDayCard({
     day,
     isToday,
+    userId,
     onPlanChange,
+    onWorkoutsLogged,
 }: {
     day: DayPlan;
     isToday: boolean;
+    userId: string | null;
     onPlanChange: (updated: DayPlan) => void;
+    onWorkoutsLogged: () => void;
 }) {
     const [expanded, setExpanded] = useState(isToday);
     const [editMode, setEditMode] = useState(false);
@@ -299,6 +342,19 @@ function AIPlanDayCard({
     const [showExModal, setShowExModal] = useState(false);
     const [focusText, setFocusText] = useState(day.focus);
     const [isRest, setIsRest] = useState(day.isRest);
+    const [loggingAll, setLoggingAll] = useState(false);
+    const [loggedExercises, setLoggedExercises] = useState<Set<number>>(new Set());
+
+    // Derive the date string for this day card
+    const getDayDateStr = () => {
+        const today = new Date();
+        const todayDayIndex = (today.getDay() + 6) % 7; // Mon=0
+        const planDayIndex = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].indexOf(day.day);
+        const diff = planDayIndex - todayDayIndex;
+        const target = new Date(today);
+        target.setDate(today.getDate() + diff);
+        return toDateStr(target);
+    };
 
     const handleToggleRest = () => {
         const updated = { ...day, isRest: !isRest, focus: !isRest ? "Rest & Recovery" : day.focus };
@@ -344,15 +400,31 @@ function AIPlanDayCard({
         setShowExModal(false);
     };
 
+    const handleLogAll = async () => {
+        if (!userId) return;
+        setLoggingAll(true);
+        const dateStr = getDayDateStr();
+        await logExercisesToWorkouts(userId, day.exercises ?? [], day.focus, dateStr, () => {
+            setLoggedExercises(new Set(day.exercises.map((_, i) => i)));
+            onWorkoutsLogged();
+        });
+        setLoggingAll(false);
+    };
+
+    const handleLogSingle = async (ex: Exercise, index: number) => {
+        if (!userId) return;
+        const dateStr = getDayDateStr();
+        await logSingleExercise(userId, ex, day.focus, dateStr, () => {
+            setLoggedExercises((prev) => new Set([...prev, index]));
+            onWorkoutsLogged();
+        });
+    };
+
     return (
         <>
             <View style={[ps.dayCard, isToday && ps.dayCardToday, isRest && ps.dayCardRest]}>
                 {/* Card Header */}
-                <TouchableOpacity
-                    style={ps.dayCardHeader}
-                    onPress={() => setExpanded((v) => !v)}
-                    activeOpacity={0.7}
-                >
+                <TouchableOpacity style={ps.dayCardHeader} onPress={() => setExpanded((v) => !v)} activeOpacity={0.7}>
                     <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                             <Text style={[ps.dayName, isToday && { color: "#22c55e" }]}>{day.day}</Text>
@@ -393,7 +465,6 @@ function AIPlanDayCard({
                                         </Text>
                                     </TouchableOpacity>
                                 </View>
-
                                 {!isRest && (
                                     <View style={ps.editControlRow}>
                                         <Text style={ps.editControlLabel}>Focus</Text>
@@ -413,46 +484,100 @@ function AIPlanDayCard({
                         {/* Exercise list */}
                         {!isRest && day.exercises && day.exercises.length > 0 && (
                             <View style={ps.exerciseList}>
-                                {day.exercises.map((ex, i) => (
-                                    <View key={i} style={ps.exerciseRow}>
-                                        <View style={ps.exNumCircle}>
-                                            <Text style={ps.exNum}>{i + 1}</Text>
-                                        </View>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={ps.exName}>{ex.name}</Text>
-                                            <Text style={ps.exMeta}>
-                                                {ex.sets > 0 ? `${ex.sets} sets` : ""}
-                                                {ex.reps ? ` × ${ex.reps} reps` : ""}
-                                                {ex.duration ? ` • ${ex.duration}` : ""}
-                                            </Text>
-                                        </View>
-                                        {editMode && (
-                                            <View style={{ flexDirection: "row", gap: 6 }}>
-                                                <TouchableOpacity
-                                                    style={ps.exActionBtn}
-                                                    onPress={() => handleEditExercise(ex, i)}
-                                                >
-                                                    <Edit2 size={13} color="#3b82f6" />
-                                                </TouchableOpacity>
-                                                <TouchableOpacity
-                                                    style={[ps.exActionBtn, { backgroundColor: "rgba(239,68,68,0.1)" }]}
-                                                    onPress={() => handleDeleteExercise(i)}
-                                                >
-                                                    <Trash2 size={13} color="#ef4444" />
-                                                </TouchableOpacity>
+                                {day.exercises.map((ex, i) => {
+                                    const isLogged = loggedExercises.has(i);
+                                    return (
+                                        <View key={i} style={[ps.exerciseRow, isLogged && ps.exerciseRowLogged]}>
+                                            <View style={[ps.exNumCircle, isLogged && ps.exNumCircleLogged]}>
+                                                {isLogged
+                                                    ? <CheckCircle size={14} color="#22c55e" />
+                                                    : <Text style={ps.exNum}>{i + 1}</Text>
+                                                }
                                             </View>
-                                        )}
-                                    </View>
-                                ))}
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={[ps.exName, isLogged && { color: "#555" }]}>{ex.name}</Text>
+                                                <Text style={ps.exMeta}>
+                                                    {ex.sets > 0 ? `${ex.sets} sets` : ""}
+                                                    {ex.reps ? ` × ${ex.reps} reps` : ""}
+                                                    {ex.duration ? ` • ${ex.duration}` : ""}
+                                                </Text>
+                                            </View>
+                                            {/* Action buttons */}
+                                            <View style={{ flexDirection: "row", gap: 6 }}>
+                                                {!editMode && !isLogged && (
+                                                    <TouchableOpacity
+                                                        style={ps.logSingleBtn}
+                                                        onPress={() => handleLogSingle(ex, i)}
+                                                    >
+                                                        <CheckCircle size={13} color="#22c55e" />
+                                                        <Text style={ps.logSingleBtnText}>Log</Text>
+                                                    </TouchableOpacity>
+                                                )}
+                                                {!editMode && isLogged && (
+                                                    <View style={ps.loggedBadge}>
+                                                        <Text style={ps.loggedBadgeText}>Logged</Text>
+                                                    </View>
+                                                )}
+                                                {editMode && (
+                                                    <>
+                                                        <TouchableOpacity style={ps.exActionBtn} onPress={() => handleEditExercise(ex, i)}>
+                                                            <Edit2 size={13} color="#3b82f6" />
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity style={[ps.exActionBtn, { backgroundColor: "rgba(239,68,68,0.1)" }]} onPress={() => handleDeleteExercise(i)}>
+                                                            <Trash2 size={13} color="#ef4444" />
+                                                        </TouchableOpacity>
+                                                    </>
+                                                )}
+                                            </View>
+                                        </View>
+                                    );
+                                })}
                             </View>
                         )}
 
-                        {/* Add exercise button */}
+                        {/* Add exercise button (edit mode) */}
                         {editMode && !isRest && (
                             <TouchableOpacity style={ps.addExBtn} onPress={handleAddExercise}>
                                 <Plus size={14} color="#22c55e" />
                                 <Text style={ps.addExBtnText}>Add Exercise</Text>
                             </TouchableOpacity>
+                        )}
+
+                        {/* Start Workout + Log buttons */}
+                        {!editMode && !isRest && day.exercises && day.exercises.length > 0 && (
+                            <View style={{ gap: 10, marginTop: 12 }}>
+                                {/* Start Workout — primary action */}
+                                <TouchableOpacity
+                                    style={ps.startWorkoutBtn}
+                                    onPress={() => {
+                                        const dateStr = getDayDateStr();
+                                        router.push({
+                                            pathname: "/tabs/workout-session" as any,
+                                            params: {
+                                                exercises: JSON.stringify(day.exercises),
+                                                dayName: day.day,
+                                                focus: day.focus,
+                                                dateStr,
+                                                userId: userId ?? "",
+                                            },
+                                        });
+                                    }}
+                                >
+                                    <Text style={ps.startWorkoutBtnText}>▶ Start Workout</Text>
+                                </TouchableOpacity>
+
+                                {/* Log All — secondary action */}
+                                <TouchableOpacity
+                                    style={[ps.logAllBtn, loggingAll && { opacity: 0.6 }]}
+                                    onPress={handleLogAll}
+                                    disabled={loggingAll}
+                                >
+                                    <CheckCircle size={15} color="#22c55e" />
+                                    <Text style={ps.logAllBtnText}>
+                                        {loggingAll ? "Logging..." : `Log All Without Starting`}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
                         )}
 
                         {/* Rest day message */}
@@ -476,12 +601,21 @@ function AIPlanDayCard({
 }
 
 // ─── Full AI Plan Section ─────────────────────
-function AIPlanSection({ userId, userProfile }: { userId: string | null; userProfile: any }) {
+function AIPlanSection({
+    userId,
+    userProfile,
+    onWorkoutsLogged,
+}: {
+    userId: string | null;
+    userProfile: any;
+    onWorkoutsLogged: () => void;
+}) {
     const [plan, setPlan] = useState<WorkoutPlan | null>(null);
     const [loading, setLoading] = useState(true);
     const [regenerating, setRegenerating] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [loggingWeek, setLoggingWeek] = useState(false);
 
     const todayIndex = (new Date().getDay() + 6) % 7;
 
@@ -498,7 +632,6 @@ function AIPlanSection({ userId, userProfile }: { userId: string | null; userPro
         setLoading(false);
     };
 
-    // Called when user edits a day — updates local state only
     const handleDayChange = (dayIndex: number, updated: DayPlan) => {
         if (!plan) return;
         const newWeekPlan = plan.weekPlan.map((d, i) => i === dayIndex ? updated : d);
@@ -506,15 +639,11 @@ function AIPlanSection({ userId, userProfile }: { userId: string | null; userPro
         setHasUnsavedChanges(true);
     };
 
-    // Save manual edits to Supabase
     const handleSaveChanges = async () => {
         if (!plan || !userId) return;
         setSaving(true);
         try {
-            await supabase
-                .from("workout_plans")
-                .update({ plan, updated_at: new Date().toISOString() })
-                .eq("user_id", userId);
+            await supabase.from("workout_plans").update({ plan, updated_at: new Date().toISOString() }).eq("user_id", userId);
             setHasUnsavedChanges(false);
             Alert.alert("Saved!", "Your workout plan has been updated.");
         } catch {
@@ -522,6 +651,51 @@ function AIPlanSection({ userId, userProfile }: { userId: string | null; userPro
         } finally {
             setSaving(false);
         }
+    };
+
+    // Log the entire week's plan
+    const handleLogWeek = async () => {
+        if (!plan || !userId) return;
+        Alert.alert(
+            "Log Entire Week",
+            "This will add all exercises from this week's plan to your calendar. Continue?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Log All",
+                    onPress: async () => {
+                        setLoggingWeek(true);
+                        let totalLogged = 0;
+                        for (const day of plan.weekPlan) {
+                            if (day.isRest || !day.exercises || day.exercises.length === 0) continue;
+                            const dayIndex = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].indexOf(day.day);
+                            const todayDayIndex = (new Date().getDay() + 6) % 7;
+                            const diff = dayIndex - todayDayIndex;
+                            const target = new Date();
+                            target.setDate(new Date().getDate() + diff);
+                            const dateStr = toDateStr(target);
+
+                            const rows = day.exercises.map((ex) => ({
+                                user_id: userId,
+                                date: dateStr,
+                                name: ex.name,
+                                type: inferWorkoutType(ex.name, day.focus),
+                                duration_minutes: ex.duration
+                                    ? parseInt(ex.duration.replace(/[^0-9]/g, "")) || 30
+                                    : 30,
+                                completed: true,
+                            }));
+
+                            const { error } = await supabase.from("workouts").insert(rows);
+                            if (!error) totalLogged += rows.length;
+                        }
+                        setLoggingWeek(false);
+                        Alert.alert("✅ Week Logged!", `${totalLogged} exercises added across your calendar.`);
+                        onWorkoutsLogged();
+                    },
+                },
+            ]
+        );
     };
 
     const regenerate = async () => {
@@ -567,13 +741,23 @@ function AIPlanSection({ userId, userProfile }: { userId: string | null; userPro
                 </TouchableOpacity>
             </View>
 
+            {/* Log entire week button */}
+            {!loading && !regenerating && plan && (
+                <TouchableOpacity
+                    style={[ps.logWeekBtn, loggingWeek && { opacity: 0.6 }]}
+                    onPress={handleLogWeek}
+                    disabled={loggingWeek}
+                >
+                    <CheckCircle size={15} color="#22c55e" />
+                    <Text style={ps.logWeekBtnText}>
+                        {loggingWeek ? "Logging week..." : "Log Entire Week to Calendar"}
+                    </Text>
+                </TouchableOpacity>
+            )}
+
             {/* Unsaved changes banner */}
             {hasUnsavedChanges && (
-                <TouchableOpacity
-                    style={ps.unsavedBanner}
-                    onPress={handleSaveChanges}
-                    disabled={saving}
-                >
+                <TouchableOpacity style={ps.unsavedBanner} onPress={handleSaveChanges} disabled={saving}>
                     <Save size={14} color="#f97316" />
                     <Text style={ps.unsavedBannerText}>
                         {saving ? "Saving..." : "You have unsaved changes — tap to save"}
@@ -598,7 +782,9 @@ function AIPlanSection({ userId, userProfile }: { userId: string | null; userPro
                             key={day.day}
                             day={day}
                             isToday={i === todayIndex}
+                            userId={userId}
                             onPlanChange={(updated) => handleDayChange(i, updated)}
+                            onWorkoutsLogged={onWorkoutsLogged}
                         />
                     ))}
                 </View>
@@ -606,7 +792,7 @@ function AIPlanSection({ userId, userProfile }: { userId: string | null; userPro
 
             <View style={ps.bernardHint}>
                 <Text style={ps.bernardHintText}>
-                    💬 Ask Bernard to adjust your plan anytime, or tap ✏️ on any day to edit manually.
+                    💬 Ask Bernard to adjust your plan, tap ✏️ to edit manually, or tap "Log" to track exercises.
                 </Text>
             </View>
         </View>
@@ -754,6 +940,7 @@ export default function ExerciseCalendar() {
                 </View>
 
                 {/* Selected Day */}
+                {/* Selected Day */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>
                         {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric" })}
@@ -773,6 +960,31 @@ export default function ExerciseCalendar() {
                                         {workout.time}{workout.duration > 0 ? ` • ${workout.duration} min` : ""} • {config.label}
                                     </Text>
                                 </View>
+                                {/* ── Delete button ── */}
+                                <TouchableOpacity
+                                    style={styles.deleteWorkoutBtn}
+                                    onPress={() => {
+                                        Alert.alert("Remove Workout", `Remove "${workout.name}"?`, [
+                                            { text: "Cancel", style: "cancel" },
+                                            {
+                                                text: "Remove", style: "destructive",
+                                                onPress: async () => {
+                                                    const { error } = await supabase
+                                                        .from("workouts")
+                                                        .delete()
+                                                        .eq("id", workout.id);
+                                                    if (!error) {
+                                                        setWorkouts((prev) => prev.filter((w) => w.id !== workout.id));
+                                                    } else {
+                                                        Alert.alert("Error", "Could not remove workout.");
+                                                    }
+                                                },
+                                            },
+                                        ]);
+                                    }}
+                                >
+                                    <X size={14} color="#ef4444" />
+                                </TouchableOpacity>
                             </View>
                         );
                     }) : (
@@ -781,7 +993,6 @@ export default function ExerciseCalendar() {
                         </View>
                     )}
                 </View>
-
                 {/* This Week Summary */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>This Week</Text>
@@ -804,7 +1015,11 @@ export default function ExerciseCalendar() {
                 </View>
 
                 {/* AI Plan Section */}
-                <AIPlanSection userId={userId} userProfile={userProfile} />
+                <AIPlanSection
+                    userId={userId}
+                    userProfile={userProfile}
+                    onWorkoutsLogged={() => userId && loadWorkouts(userId)}
+                />
 
                 {/* Trends */}
                 <WorkoutTrends userId={userId} />
@@ -870,17 +1085,20 @@ const es = StyleSheet.create({
     input: { backgroundColor: "#2a2a2a", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#fff", fontSize: 14, marginBottom: 14, borderWidth: 1, borderColor: "#333" },
     saveBtn: { backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: 14, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 4 },
     saveBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+   
 });
 
 // ─── AI Plan Styles ───────────────────────────
 const ps = StyleSheet.create({
     wrap: { backgroundColor: "#111", borderRadius: 20, padding: 16, borderWidth: 1, borderColor: "#2a2a2a" },
-    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
     headerEmoji: { fontSize: 28 },
     title: { color: "#fff", fontSize: 15, fontWeight: "700" },
     subtitle: { color: "#555", fontSize: 12, marginTop: 2 },
     regenBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(34,197,94,0.1)", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" },
     regenBtnText: { color: "#22c55e", fontSize: 12, fontWeight: "600" },
+    logWeekBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "rgba(34,197,94,0.08)", borderRadius: 12, paddingVertical: 12, marginBottom: 14, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" },
+    logWeekBtnText: { color: "#22c55e", fontSize: 13, fontWeight: "700" },
     unsavedBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(249,115,22,0.1)", borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: "rgba(249,115,22,0.2)" },
     unsavedBannerText: { color: "#f97316", fontSize: 13, fontWeight: "600", flex: 1 },
     loadingBox: { backgroundColor: "#1a1a1a", borderRadius: 12, padding: 20, alignItems: "center" },
@@ -909,18 +1127,40 @@ const ps = StyleSheet.create({
     toggleBtnText: { color: "#888", fontSize: 13, fontWeight: "600" },
     toggleBtnTextActive: { color: "#22c55e" },
     exerciseList: { gap: 8 },
-    exerciseRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+    exerciseRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 },
+    exerciseRowLogged: { opacity: 0.6 },
     exNumCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: "#2a2a2a", alignItems: "center", justifyContent: "center" },
+    exNumCircleLogged: { backgroundColor: "rgba(34,197,94,0.15)" },
     exNum: { color: "#888", fontSize: 11, fontWeight: "700" },
     exName: { color: "#fff", fontSize: 13, fontWeight: "600" },
     exMeta: { color: "#555", fontSize: 12, marginTop: 2 },
     exActionBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: "rgba(59,130,246,0.1)", alignItems: "center", justifyContent: "center" },
+    logSingleBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(34,197,94,0.1)", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" },
+    logSingleBtnText: { color: "#22c55e", fontSize: 11, fontWeight: "600" },
+    loggedBadge: { backgroundColor: "rgba(34,197,94,0.1)", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5 },
+    loggedBadgeText: { color: "#22c55e", fontSize: 11, fontWeight: "600" },
     addExBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)", backgroundColor: "rgba(34,197,94,0.05)", justifyContent: "center" },
     addExBtnText: { color: "#22c55e", fontSize: 13, fontWeight: "600" },
+    logAllBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12, backgroundColor: "#22c55e", borderRadius: 12, paddingVertical: 12 },
+    logAllBtnText: { color: "#fff", fontSize: 13, fontWeight: "700" },
     restMsg: { paddingTop: 4 },
     restMsgText: { color: "#555", fontSize: 13, fontStyle: "italic" },
     bernardHint: { marginTop: 14, backgroundColor: "rgba(34,197,94,0.05)", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "rgba(34,197,94,0.1)" },
     bernardHintText: { color: "#555", fontSize: 12, lineHeight: 18 },
+    startWorkoutBtn: {
+        backgroundColor: "#22c55e",
+        borderRadius: 12,
+        paddingVertical: 13,
+        alignItems: "center",
+        justifyContent: "center",
+        marginTop: 12,
+    },
+    startWorkoutBtnText: {
+        color: "#fff",
+        fontSize: 14,
+        fontWeight: "700",
+    },
+    
 });
 
 // ─── Trend Styles ─────────────────────────────
@@ -993,4 +1233,11 @@ const styles = StyleSheet.create({
     row: { flexDirection: "row" },
     submitBtn: { backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: 15, alignItems: "center", marginTop: 4 },
     submitBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+    deleteWorkoutBtn: {
+        width: 28, height: 28, borderRadius: 8,
+        backgroundColor: "rgba(239,68,68,0.1)",
+        alignItems: "center", justifyContent: "center",
+        borderWidth: 1, borderColor: "rgba(239,68,68,0.15)",
+        marginLeft: 8,
+    },
 });

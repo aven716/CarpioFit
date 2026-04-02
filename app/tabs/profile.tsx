@@ -40,6 +40,7 @@ interface StatsData {
     totalDistanceKm: number;
     totalActiveDays: number;
     currentStreak: number;
+    totalCaloriesBurned: number; // ← NEW: aggregated from daily_stats
 }
 
 interface AchievementItem {
@@ -63,7 +64,9 @@ function ProgressBar({
     const clamped = Math.min(Math.max(value, 0), 100);
     return (
         <View style={{ height, backgroundColor: trackColor, borderRadius: 99, overflow: "hidden" }}>
-            <View style={{ width: `${clamped}%`, height, backgroundColor: fillColor, borderRadius: 99 }} />
+            <View
+                style={{ width: `${clamped}%`, height, backgroundColor: fillColor, borderRadius: 99 }}
+            />
         </View>
     );
 }
@@ -75,6 +78,7 @@ export default function Profile() {
         totalDistanceKm: 0,
         totalActiveDays: 0,
         currentStreak: 0,
+        totalCaloriesBurned: 0,
     });
     const [achievements, setAchievements] = useState<AchievementItem[]>([]);
     const [notifications, setNotifications] = useState(true);
@@ -86,40 +90,52 @@ export default function Profile() {
             const user = authData.user;
             if (!user) return;
 
-            const [profileRes, workoutsRes, streakRes, userAchievementsRes, allAchievementsRes] =
-                await Promise.all([
-                    // Profile
-                    supabase
-                        .from("profiles")
-                        .select("first_name, age, gender, weight_kg, goal_weight, goal")
-                        .eq("id", user.id)
-                        .single(),
+            const [
+                profileRes,
+                workoutsRes,
+                streakRes,
+                userAchievementsRes,
+                allAchievementsRes,
+                dailyStatsRes,   // ← NEW: fetch all daily_stats rows for this user
+            ] = await Promise.all([
+                // Profile
+                supabase
+                    .from("profiles")
+                    .select("first_name, age, gender, weight_kg, goal_weight, goal")
+                    .eq("id", user.id)
+                    .single(),
 
-                    // All completed workouts for totals
-                    supabase
-                        .from("workouts")
-                        .select("distance_km")
-                        .eq("user_id", user.id)
-                        .eq("completed", true),
+                // All completed workouts for totals
+                supabase
+                    .from("workouts")
+                    .select("distance_km")
+                    .eq("user_id", user.id)
+                    .eq("completed", true),
 
-                    // Streak
-                    supabase
-                        .from("streaks")
-                        .select("current_streak, total_active_days")
-                        .eq("user_id", user.id)
-                        .single(),
+                // Streak
+                supabase
+                    .from("streaks")
+                    .select("current_streak, total_active_days")
+                    .eq("user_id", user.id)
+                    .single(),
 
-                    // User's earned achievements
-                    supabase
-                        .from("user_achievements")
-                        .select("achievement_id")
-                        .eq("user_id", user.id),
+                // User's earned achievements
+                supabase
+                    .from("user_achievements")
+                    .select("achievement_id")
+                    .eq("user_id", user.id),
 
-                    // All achievement definitions
-                    supabase
-                        .from("achievements")
-                        .select("id, key, name, icon, category"),
-                ]);
+                // All achievement definitions
+                supabase
+                    .from("achievements")
+                    .select("id, key, name, icon, category"),
+
+                // ← NEW: All daily stats rows to aggregate calories_burned
+                supabase
+                    .from("daily_stats")
+                    .select("calories_burned, total_active_days")
+                    .eq("user_id", user.id),
+            ]);
 
             // Set profile
             if (profileRes.data) {
@@ -133,17 +149,25 @@ export default function Profile() {
                 });
             }
 
-            // Set stats
-            const totalWorkouts = workoutsRes.data?.length ?? 0;
-            const totalDistanceKm = workoutsRes.data
-                ?.reduce((sum, w) => sum + (Number(w.distance_km) || 0), 0)
+            // Aggregate total calories burned across ALL days in daily_stats
+            const totalCaloriesBurned = dailyStatsRes.data
+                ?.reduce((sum, row) => sum + (Number(row.calories_burned) || 0), 0)
                 ?? 0;
+
+            // Workout totals from workouts table
+            const totalWorkouts = workoutsRes.data?.length ?? 0;
+            const totalDistanceKm =
+                workoutsRes.data?.reduce(
+                    (sum, w) => sum + (Number(w.distance_km) || 0),
+                    0
+                ) ?? 0;
 
             setStatsData({
                 totalWorkouts,
                 totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
                 totalActiveDays: streakRes.data?.total_active_days ?? 0,
                 currentStreak: streakRes.data?.current_streak ?? 0,
+                totalCaloriesBurned: Math.round(totalCaloriesBurned),
             });
 
             // Build achievements list — show up to 4, mark earned ones
@@ -214,10 +238,18 @@ export default function Profile() {
         endurance: "Endurance Training",
     };
 
+    // ── Stats now include total calories burned ──────────────────────
     const stats = [
         { label: "Workouts", value: statsData.totalWorkouts.toString(), icon: TrendingUp },
         { label: "Total Distance", value: `${statsData.totalDistanceKm} km`, icon: Target },
         { label: "Active Days", value: statsData.totalActiveDays.toString(), icon: Award },
+        {
+            label: "Total Burned",
+            value: statsData.totalCaloriesBurned >= 1000
+                ? `${(statsData.totalCaloriesBurned / 1000).toFixed(1)}k`
+                : statsData.totalCaloriesBurned.toString(),
+            icon: Flame,
+        },
     ];
 
     const settingsItems = [
@@ -249,7 +281,9 @@ export default function Profile() {
                                 ? fitnessGoalLabel[userData.fitnessGoal] ?? ""
                                 : ""}
                         </Text>
-                        <Text style={styles.streakText}>🔥 {statsData.currentStreak} day streak</Text>
+                        <Text style={styles.streakText}>
+                            🔥 {statsData.currentStreak} day streak
+                        </Text>
                     </View>
                     <TouchableOpacity style={styles.settingsBtn}>
                         <Settings size={20} color="#888" />
@@ -266,10 +300,22 @@ export default function Profile() {
                     </View>
                     <ProgressBar value={weightProgress} />
                 </View>
+
+                {/* ── Calories Burned Banner ─────────────────────────────── */}
+                <View style={styles.caloriesBurnedBanner}>
+                    <Flame size={18} color="#f97316" />
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.caloriesBurnedLabel}>Total Calories Burned</Text>
+                        <Text style={styles.caloriesBurnedValue}>
+                            {statsData.totalCaloriesBurned.toLocaleString()} kcal
+                        </Text>
+                    </View>
+                    <Text style={styles.caloriesBurnedSub}>all time</Text>
+                </View>
             </View>
 
             <View style={styles.body}>
-                {/* Activity Stats */}
+                {/* Activity Stats — now 2×2 grid to fit 4 items */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Activity Stats</Text>
                     <View style={styles.statsGrid}>
@@ -277,7 +323,10 @@ export default function Profile() {
                             const Icon = stat.icon;
                             return (
                                 <View key={stat.label} style={styles.statCard}>
-                                    <Icon size={20} color="#22c55e" />
+                                    <Icon
+                                        size={20}
+                                        color={stat.label === "Total Burned" ? "#f97316" : "#22c55e"}
+                                    />
                                     <Text style={styles.statValue}>{stat.value}</Text>
                                     <Text style={styles.statLabel}>{stat.label}</Text>
                                 </View>
@@ -301,18 +350,27 @@ export default function Profile() {
                                 return (
                                     <View
                                         key={a.label}
-                                        style={[styles.achievementCard, !a.earned && { opacity: 0.4 }]}
+                                        style={[
+                                            styles.achievementCard,
+                                            !a.earned && { opacity: 0.4 },
+                                        ]}
                                     >
                                         <View
                                             style={[
                                                 styles.achievementIcon,
-                                                { backgroundColor: a.earned ? "rgba(34,197,94,0.1)" : "#2a2a2a" },
+                                                {
+                                                    backgroundColor: a.earned
+                                                        ? "rgba(34,197,94,0.1)"
+                                                        : "#2a2a2a",
+                                                },
                                             ]}
                                         >
                                             <Icon size={24} color={a.color} />
                                         </View>
                                         <Text style={styles.achievementLabel}>{a.label}</Text>
-                                        {a.earned && <Text style={styles.earnedText}>Earned ✓</Text>}
+                                        {a.earned && (
+                                            <Text style={styles.earnedText}>Earned ✓</Text>
+                                        )}
                                     </View>
                                 );
                             })}
@@ -332,7 +390,10 @@ export default function Profile() {
                         ].map((item, i, arr) => (
                             <View
                                 key={item.label}
-                                style={[styles.infoRow, i < arr.length - 1 && styles.infoRowBorder]}
+                                style={[
+                                    styles.infoRow,
+                                    i < arr.length - 1 && styles.infoRowBorder,
+                                ]}
                             >
                                 <Text style={styles.infoLabel}>{item.label}</Text>
                                 <Text style={styles.infoValue}>{item.value}</Text>
@@ -350,7 +411,10 @@ export default function Profile() {
                             return (
                                 <TouchableOpacity
                                     key={item.label}
-                                    style={[styles.settingRow, i < arr.length - 1 && styles.infoRowBorder]}
+                                    style={[
+                                        styles.settingRow,
+                                        i < arr.length - 1 && styles.infoRowBorder,
+                                    ]}
                                 >
                                     <View style={styles.settingLeft}>
                                         <Icon size={20} color="#888" />
@@ -400,7 +464,7 @@ const styles = StyleSheet.create({
         padding: 24,
         paddingTop: 48,
         borderRadius: 16,
-        marginTop:40,
+        marginTop: 40,
     },
     headerTop: {
         flexDirection: "row",
@@ -444,6 +508,7 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 16,
         gap: 10,
+        marginBottom: 12,
     },
     progressRow: {
         flexDirection: "row",
@@ -459,6 +524,31 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: "500",
     },
+    // ── NEW: Calories burned banner ─────────────────────────────────
+    caloriesBurnedBanner: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "rgba(249,115,22,0.1)",
+        borderRadius: 12,
+        padding: 14,
+        gap: 12,
+        borderWidth: 1,
+        borderColor: "rgba(249,115,22,0.2)",
+    },
+    caloriesBurnedLabel: {
+        color: "#888",
+        fontSize: 12,
+    },
+    caloriesBurnedValue: {
+        color: "#f97316",
+        fontSize: 18,
+        fontWeight: "700",
+        marginTop: 2,
+    },
+    caloriesBurnedSub: {
+        color: "#555",
+        fontSize: 11,
+    },
     body: {
         padding: 16,
         gap: 24,
@@ -472,12 +562,14 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "600",
     },
+    // ── 2×2 grid for 4 stat cards ────────────────────────────────────
     statsGrid: {
         flexDirection: "row",
+        flexWrap: "wrap",
         gap: 10,
     },
     statCard: {
-        flex: 1,
+        width: "47.5%",
         backgroundColor: "#1a1a1a",
         borderRadius: 16,
         padding: 16,

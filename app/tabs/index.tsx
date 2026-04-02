@@ -42,12 +42,6 @@ interface WorkoutItem {
   type: string;
 }
 
-interface StreakData {
-  currentStreak: number;
-  longestStreak: number;
-  totalActiveDays: number;
-}
-
 const DAYS_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function ProgressBar({
@@ -87,7 +81,7 @@ function AppleIcon({ color }: { color: string }) {
 
 // ─── Compact Plan Card ────────────────────────
 function CompactPlanCard({ plan, onViewFull }: { plan: WorkoutPlan | null; onViewFull: () => void }) {
-  const todayIndex = (new Date().getDay() + 6) % 7; // Mon=0 ... Sun=6
+  const todayIndex = (new Date().getDay() + 6) % 7;
 
   if (!plan) {
     return (
@@ -115,7 +109,6 @@ function CompactPlanCard({ plan, onViewFull }: { plan: WorkoutPlan | null; onVie
         </TouchableOpacity>
       </View>
 
-      {/* Today highlight */}
       <View style={styles.todayBox}>
         <View style={{ flex: 1 }}>
           <Text style={styles.todayLabel}>Today — {today?.day ?? "—"}</Text>
@@ -133,7 +126,6 @@ function CompactPlanCard({ plan, onViewFull }: { plan: WorkoutPlan | null; onVie
         </View>
       </View>
 
-      {/* 7-day strip */}
       <View style={styles.dayStrip}>
         {plan.weekPlan.map((d, i) => (
           <View key={d.day} style={[styles.dayPill, i === todayIndex && styles.dayPillToday]}>
@@ -157,18 +149,24 @@ export default function Home() {
     caloriesBurned: 0, steps: 0, activeMinutes: 0, distanceKm: 0,
   });
   const [todayWorkouts, setTodayWorkouts] = useState<WorkoutItem[]>([]);
-  const [streakData, setStreakData] = useState<StreakData>({
-    currentStreak: 0, longestStreak: 0, totalActiveDays: 0,
-  });
   const [caloriesConsumed, setCaloriesConsumed] = useState(0);
   const [macrosConsumed, setMacrosConsumed] = useState({ protein: 0, carbs: 0, fat: 0 });
   const [workoutPlan, setWorkoutPlan] = useState<WorkoutPlan | null>(null);
+
+  // Track last synced values to avoid redundant writes
   const lastSyncedSteps = useRef(0);
+  const lastSyncedCalories = useRef(0);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { steps, distanceKm, caloriesBurned, isAvailable } = useContext(PedometerContext);
 
   const calorieGoal = userData?.dailyCalories ?? 2000;
+
+  // Use pedometer value when available, otherwise fall back to DB value
   const effectiveCaloriesBurned = isAvailable ? caloriesBurned : dailyStats.caloriesBurned;
+  const effectiveSteps = isAvailable ? steps : dailyStats.steps;
+  const effectiveDistanceKm = isAvailable ? distanceKm : dailyStats.distanceKm;
+
   const caloriesRemaining = calorieGoal - caloriesConsumed + effectiveCaloriesBurned;
 
   const macros = [
@@ -177,22 +175,53 @@ export default function Home() {
     { name: "Fat", consumed: macrosConsumed.fat, goal: userData?.dailyFat ?? 70, color: "#a855f7", label: "g" },
   ];
 
+  // ─── Debounced sync: pedometer → daily_stats ─────────────────────
+  // Writes steps, calories_burned, and distance_km to the DB.
+  // Debounced by 5 s to avoid hammering Supabase on every step.
   useEffect(() => {
-    if (!isAvailable || steps === 0) return;
-    if (steps - lastSyncedSteps.current < 10) return;
-    const syncSteps = async () => {
-      const { data: authData } = await supabase.auth.getUser();
-      const user = authData.user;
-      if (!user) return;
-      const today = new Date().toISOString().split("T")[0];
-      const { error } = await supabase.from("daily_stats").upsert({
-        user_id: user.id, date: today, steps, calories_burned: caloriesBurned, distance_km: distanceKm,
-      }, { onConflict: "user_id,date" });
-      if (!error) lastSyncedSteps.current = steps;
-    };
-    syncSteps();
-  }, [steps]);
+    if (!isAvailable || !userId) return;
+    if (steps === 0 && caloriesBurned === 0) return;
 
+    // Only sync if values changed meaningfully
+    const stepsDiff = Math.abs(steps - lastSyncedSteps.current);
+    const calDiff = Math.abs(caloriesBurned - lastSyncedCalories.current);
+    if (stepsDiff < 10 && calDiff < 1) return;
+
+    // Debounce: clear any pending timer
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+
+    syncTimerRef.current = setTimeout(async () => {
+      const today = new Date().toISOString().split("T")[0];
+      const { error } = await supabase.from("daily_stats").upsert(
+        {
+          user_id: userId,
+          date: today,
+          steps,
+          calories_burned: Math.round(caloriesBurned * 10) / 10,
+          distance_km: Math.round(distanceKm * 100) / 100,
+        },
+        { onConflict: "user_id,date" }
+      );
+
+      if (!error) {
+        lastSyncedSteps.current = steps;
+        lastSyncedCalories.current = caloriesBurned;
+        // Update local dailyStats so the rest of the UI stays in sync
+        setDailyStats((prev) => ({
+          ...prev,
+          steps,
+          caloriesBurned: Math.round(caloriesBurned * 10) / 10,
+          distanceKm: Math.round(distanceKm * 100) / 100,
+        }));
+      }
+    }, 5000); // 5-second debounce
+
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [steps, caloriesBurned, distanceKm, isAvailable, userId]);
+
+  // ─── Load all data on mount ───────────────────────────────────────
   useEffect(() => {
     const loadAllData = async () => {
       const { data: authData } = await supabase.auth.getUser();
@@ -202,12 +231,30 @@ export default function Home() {
 
       const today = new Date().toISOString().split("T")[0];
 
-      const [profileRes, dailyStatsRes, workoutsRes, streakRes, foodLogsRes] = await Promise.all([
-        supabase.from("profiles").select("first_name, age, gender, weight_kg, goal_weight, goal, activity_level, height_cm, daily_calories, daily_protein, daily_fat, daily_carbs").eq("id", user.id).single(),
-        supabase.from("daily_stats").select("calories_burned, steps, active_minutes, distance_km").eq("user_id", user.id).eq("date", today).single(),
-        supabase.from("workouts").select("name, type, duration_minutes, created_at").eq("user_id", user.id).eq("date", today).order("created_at", { ascending: true }),
-        supabase.from("streaks").select("current_streak, longest_streak, total_active_days").eq("user_id", user.id).single(),
-        supabase.from("food_logs").select("calories, protein_g, carbs_g, fat_g, logged_at").eq("user_id", user.id),
+      const [profileRes, dailyStatsRes, workoutsRes, foodLogsRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select(
+            "first_name, age, gender, weight_kg, goal_weight, goal, activity_level, height_cm, daily_calories, daily_protein, daily_fat, daily_carbs"
+          )
+          .eq("id", user.id)
+          .single(),
+        supabase
+          .from("daily_stats")
+          .select("calories_burned, steps, active_minutes, distance_km")
+          .eq("user_id", user.id)
+          .eq("date", today)
+          .single(),
+        supabase
+          .from("workouts")
+          .select("name, type, duration_minutes, created_at")
+          .eq("user_id", user.id)
+          .eq("date", today)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("food_logs")
+          .select("calories, protein_g, carbs_g, fat_g, logged_at")
+          .eq("user_id", user.id),
       ]);
 
       if (profileRes.data) {
@@ -225,18 +272,22 @@ export default function Home() {
           dailyCarbs: p.daily_carbs ?? 250,
         });
 
-        // Load or generate workout plan
         const plan = await fetchOrGenerateWorkoutPlan(user.id, p);
         setWorkoutPlan(plan);
       }
 
+      // Load today's stats from DB (used as fallback when pedometer unavailable)
       if (dailyStatsRes.data) {
+        const ds = dailyStatsRes.data;
         setDailyStats({
-          caloriesBurned: Number(dailyStatsRes.data.calories_burned) ?? 0,
-          steps: dailyStatsRes.data.steps ?? 0,
-          activeMinutes: dailyStatsRes.data.active_minutes ?? 0,
-          distanceKm: Number(dailyStatsRes.data.distance_km) ?? 0,
+          caloriesBurned: Number(ds.calories_burned) || 0,
+          steps: ds.steps || 0,
+          activeMinutes: ds.active_minutes || 0,
+          distanceKm: Number(ds.distance_km) || 0,
         });
+        // Seed last-synced refs so we don't immediately re-write unchanged data
+        lastSyncedSteps.current = ds.steps || 0;
+        lastSyncedCalories.current = Number(ds.calories_burned) || 0;
       }
 
       if (foodLogsRes.data) {
@@ -261,20 +312,17 @@ export default function Home() {
       }
 
       if (workoutsRes.data && workoutsRes.data.length > 0) {
-        setTodayWorkouts(workoutsRes.data.map((w) => ({
-          name: w.name,
-          type: w.type ?? "general",
-          duration: w.duration_minutes ? `${w.duration_minutes} min` : "--",
-          time: new Date(w.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-        })));
-      }
-
-      if (streakRes.data) {
-        setStreakData({
-          currentStreak: streakRes.data.current_streak ?? 0,
-          longestStreak: streakRes.data.longest_streak ?? 0,
-          totalActiveDays: streakRes.data.total_active_days ?? 0,
-        });
+        setTodayWorkouts(
+          workoutsRes.data.map((w) => ({
+            name: w.name,
+            type: w.type ?? "general",
+            duration: w.duration_minutes ? `${w.duration_minutes} min` : "--",
+            time: new Date(w.created_at).toLocaleTimeString("en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          }))
+        );
       }
     };
 
@@ -282,13 +330,34 @@ export default function Home() {
   }, []);
 
   const statsCards = [
-    { icon: "flame", label: "Calories Burned", value: Math.round(effectiveCaloriesBurned).toString(), unit: "kcal", color: "#f97316" },
-    { icon: "footprints", label: "Steps Today", value: isAvailable ? steps.toLocaleString() : dailyStats.steps.toLocaleString(), unit: "steps", color: "#22c55e" },
-    { icon: "activity", label: "Active Minutes", value: dailyStats.activeMinutes.toString(), unit: "min", color: "#3b82f6" },
+    {
+      icon: "flame",
+      label: "Calories Burned",
+      value: Math.round(effectiveCaloriesBurned).toString(),
+      unit: "kcal",
+      color: "#f97316",
+    },
+    {
+      icon: "footprints",
+      label: "Steps Today",
+      value: effectiveSteps.toLocaleString(),
+      unit: "steps",
+      color: "#22c55e",
+    },
+    {
+      icon: "activity",
+      label: "Active Minutes",
+      value: dailyStats.activeMinutes.toString(),
+      unit: "min",
+      color: "#3b82f6",
+    },
   ];
 
   const fitnessGoalLabel: Record<string, string> = {
-    lose: "Losing weight", gain: "Gaining muscle", maintain: "Maintaining weight", endurance: "Building endurance",
+    lose: "Losing weight",
+    gain: "Gaining muscle",
+    maintain: "Maintaining weight",
+    endurance: "Building endurance",
   };
 
   return (
@@ -300,12 +369,6 @@ export default function Home() {
         <Text style={styles.subGreeting}>Ready to crush your goals today?</Text>
       </View>
 
-      {/* ── Compact Plan Card ── */}
-      <CompactPlanCard
-        plan={workoutPlan}
-        onViewFull={() => navigation.navigate("Calendar")}
-      />
-
       {/* ── Calorie Card ── */}
       <View style={[styles.card, styles.calorieCard]}>
         <View style={styles.calorieCardHeader}>
@@ -316,11 +379,16 @@ export default function Home() {
             <View>
               <Text style={styles.calorieCardTitle}>Daily Calories</Text>
               <Text style={styles.calorieCardSub}>
-                {caloriesRemaining > 0 ? `${Math.round(caloriesRemaining)} remaining` : "Goal exceeded"}
+                {caloriesRemaining > 0
+                  ? `${Math.round(caloriesRemaining)} remaining`
+                  : "Goal exceeded"}
               </Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.logFoodBtn} onPress={() => navigation.navigate("Food")}>
+          <TouchableOpacity
+            style={styles.logFoodBtn}
+            onPress={() => navigation.navigate("Food")}
+          >
             <Plus size={14} color="#1a3329" />
             <Text style={styles.logFoodBtnText}>Log Food</Text>
           </TouchableOpacity>
@@ -338,12 +406,19 @@ export default function Home() {
           </View>
           <Text style={styles.calorieSummaryOp}>+</Text>
           <View style={styles.calorieSummaryItem}>
-            <Text style={[styles.calorieSummaryValue, { color: "#f97316" }]}>{Math.round(effectiveCaloriesBurned)}</Text>
+            <Text style={[styles.calorieSummaryValue, { color: "#f97316" }]}>
+              {Math.round(effectiveCaloriesBurned)}
+            </Text>
             <Text style={styles.calorieSummaryLabel}>Burned</Text>
           </View>
           <Text style={styles.calorieSummaryOp}>=</Text>
           <View style={styles.calorieSummaryItem}>
-            <Text style={[styles.calorieSummaryValue, { color: caloriesRemaining >= 0 ? "#22c55e" : "#ef4444" }]}>
+            <Text
+              style={[
+                styles.calorieSummaryValue,
+                { color: caloriesRemaining >= 0 ? "#22c55e" : "#ef4444" },
+              ]}
+            >
               {Math.round(caloriesRemaining)}
             </Text>
             <Text style={styles.calorieSummaryLabel}>Left</Text>
@@ -352,17 +427,28 @@ export default function Home() {
 
         <View style={styles.calorieProgress}>
           <View style={styles.calorieProgressLabels}>
-            <Text style={styles.calorieLabel}>{Math.round(caloriesConsumed)} eaten of {calorieGoal} kcal goal</Text>
+            <Text style={styles.calorieLabel}>
+              {Math.round(caloriesConsumed)} eaten of {calorieGoal} kcal goal
+            </Text>
           </View>
-          <ProgressBar value={(caloriesConsumed / (calorieGoal + effectiveCaloriesBurned)) * 100} height={12} />
+          <ProgressBar
+            value={(caloriesConsumed / (calorieGoal + effectiveCaloriesBurned)) * 100}
+            height={12}
+          />
         </View>
 
         <View style={styles.macrosContainer}>
           {macros.map((macro) => (
             <View key={macro.name} style={styles.macroItem}>
               <Text style={styles.macroName}>{macro.name}</Text>
-              <Text style={styles.macroValue}>{Math.round(macro.consumed)}/{macro.goal}{macro.label}</Text>
-              <ProgressBar value={(macro.consumed / macro.goal) * 100} height={6} fillColor={macro.color} />
+              <Text style={styles.macroValue}>
+                {Math.round(macro.consumed)}/{macro.goal}{macro.label}
+              </Text>
+              <ProgressBar
+                value={(macro.consumed / macro.goal) * 100}
+                height={6}
+                fillColor={macro.color}
+              />
             </View>
           ))}
         </View>
@@ -382,33 +468,11 @@ export default function Home() {
         ))}
       </View>
 
-      {/* ── Streak Card ── */}
-      <View style={[styles.card, styles.darkCard]}>
-        <View style={styles.cardHeader}>
-          <View style={[styles.iconCircle, { backgroundColor: "rgba(249,115,22,0.1)" }]}>
-            <Text style={{ fontSize: 20 }}>🔥</Text>
-          </View>
-          <View>
-            <Text style={styles.cardTitle}>Current Streak</Text>
-            <Text style={styles.cardSub}>{streakData.totalActiveDays} total active days</Text>
-          </View>
-        </View>
-        <View style={styles.weightRow}>
-          <View>
-            <Text style={styles.weightValue}>{streakData.currentStreak}</Text>
-            <Text style={styles.weightLabel}>Current</Text>
-          </View>
-          <TrendingUp size={24} color="#f97316" />
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={styles.weightValue}>{streakData.longestStreak}</Text>
-            <Text style={styles.weightLabel}>Best</Text>
-          </View>
-        </View>
-        <ProgressBar
-          value={streakData.longestStreak > 0 ? (streakData.currentStreak / streakData.longestStreak) * 100 : 0}
-          trackColor="rgba(255,255,255,0.1)" fillColor="#f97316"
-        />
-      </View>
+      {/* ── Weekly Plan Card ── */}
+      <CompactPlanCard
+        plan={workoutPlan}
+        onViewFull={() => navigation.navigate("Calendar")}
+      />
 
       {/* ── Weight Goal Card ── */}
       <View style={[styles.card, styles.darkCard]}>
@@ -418,7 +482,9 @@ export default function Home() {
           </View>
           <View>
             <Text style={styles.cardTitle}>Weight Goal</Text>
-            <Text style={styles.cardSub}>{userData?.fitnessGoal ? fitnessGoalLabel[userData.fitnessGoal] ?? "" : ""}</Text>
+            <Text style={styles.cardSub}>
+              {userData?.fitnessGoal ? fitnessGoalLabel[userData.fitnessGoal] ?? "" : ""}
+            </Text>
           </View>
         </View>
         <View style={styles.weightRow}>
@@ -433,10 +499,15 @@ export default function Home() {
           </View>
         </View>
         <ProgressBar
-          value={userData?.currentWeight && userData?.goalWeight
-            ? ((parseFloat(userData.currentWeight) - parseFloat(userData.goalWeight)) / parseFloat(userData.currentWeight)) * 100
-            : 0}
-          trackColor="rgba(255,255,255,0.1)" fillColor="#22c55e"
+          value={
+            userData?.currentWeight && userData?.goalWeight
+              ? ((parseFloat(userData.currentWeight) - parseFloat(userData.goalWeight)) /
+                parseFloat(userData.currentWeight)) *
+              100
+              : 0
+          }
+          trackColor="rgba(255,255,255,0.1)"
+          fillColor="#22c55e"
         />
       </View>
 
@@ -458,10 +529,22 @@ export default function Home() {
             <View key={index} style={[styles.card, styles.workoutCard]}>
               <View>
                 <Text style={styles.workoutName}>{workout.name}</Text>
-                <Text style={styles.workoutMeta}>{workout.time} • {workout.duration}</Text>
+                <Text style={styles.workoutMeta}>
+                  {workout.time} • {workout.duration}
+                </Text>
               </View>
-              <View style={[styles.workoutBadge, workout.type === "cardio" ? styles.cardioBadge : styles.strengthBadge]}>
-                <Text style={[styles.workoutBadgeText, workout.type === "cardio" ? styles.cardioText : styles.strengthText]}>
+              <View
+                style={[
+                  styles.workoutBadge,
+                  workout.type === "cardio" ? styles.cardioBadge : styles.strengthBadge,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.workoutBadgeText,
+                    workout.type === "cardio" ? styles.cardioText : styles.strengthText,
+                  ]}
+                >
                   {workout.type}
                 </Text>
               </View>
@@ -483,21 +566,28 @@ const styles = StyleSheet.create({
   // Plan card
   planCard: {
     backgroundColor: "#111827",
-    borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: "#1f2937",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#1f2937",
   },
   planCardHeader: {
-    flexDirection: "row", justifyContent: "space-between",
-    alignItems: "center", marginBottom: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
   },
   planCardTitle: { color: "#fff", fontSize: 15, fontWeight: "700" },
   viewFullRow: { flexDirection: "row", alignItems: "center", gap: 2 },
   viewFullBtn: { color: "#22c55e", fontSize: 13, fontWeight: "600" },
   todayBox: {
     backgroundColor: "rgba(34,197,94,0.08)",
-    borderRadius: 12, padding: 12,
-    flexDirection: "row", alignItems: "center",
-    borderWidth: 1, borderColor: "rgba(34,197,94,0.15)",
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.15)",
     marginBottom: 14,
   },
   todayLabel: { color: "#888", fontSize: 11, marginBottom: 3 },
@@ -505,8 +595,11 @@ const styles = StyleSheet.create({
   todayExCount: { color: "#22c55e", fontSize: 12, marginTop: 3 },
   todayBadge: {
     backgroundColor: "rgba(34,197,94,0.15)",
-    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: "rgba(34,197,94,0.3)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "rgba(34,197,94,0.3)",
   },
   todayBadgeRest: {
     backgroundColor: "rgba(107,114,128,0.15)",
@@ -514,38 +607,94 @@ const styles = StyleSheet.create({
   },
   todayBadgeText: { color: "#22c55e", fontSize: 12, fontWeight: "600" },
   dayStrip: { flexDirection: "row", justifyContent: "space-between" },
-  dayPill: {
-    alignItems: "center", flex: 1,
-    paddingVertical: 6, borderRadius: 8,
-  },
+  dayPill: { alignItems: "center", flex: 1, paddingVertical: 6, borderRadius: 8 },
   dayPillToday: { backgroundColor: "rgba(34,197,94,0.12)" },
   dayPillLabel: { color: "#555", fontSize: 10, marginBottom: 3 },
   dayPillLabelToday: { color: "#22c55e", fontWeight: "700" },
   dayPillDot: { fontSize: 14 },
 
-  card: { borderRadius: 16, padding: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4 },
+  card: {
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
   darkCard: { backgroundColor: "#1a1a1a" },
   calorieCard: { backgroundColor: "#1a3329" },
-  calorieCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
+  calorieCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
   calorieCardLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
-  iconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center", marginRight: 10 },
+  iconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
   calorieCardTitle: { color: "#fff", fontSize: 15, fontWeight: "600" },
   calorieCardSub: { color: "rgba(255,255,255,0.6)", fontSize: 12, marginTop: 2 },
-  logFoodBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, gap: 4 },
+  logFoodBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 4,
+  },
   logFoodBtnText: { color: "#1a3329", fontSize: 13, fontWeight: "600", marginLeft: 4 },
-  calorieSummaryRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "rgba(0,0,0,0.2)", borderRadius: 12, padding: 12, marginBottom: 14 },
+  calorieSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.2)",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
   calorieSummaryItem: { alignItems: "center", flex: 1 },
   calorieSummaryValue: { color: "#fff", fontSize: 15, fontWeight: "700" },
   calorieSummaryLabel: { color: "rgba(255,255,255,0.5)", fontSize: 10, marginTop: 2 },
-  calorieSummaryOp: { color: "rgba(255,255,255,0.3)", fontSize: 16, fontWeight: "300", paddingHorizontal: 2 },
+  calorieSummaryOp: {
+    color: "rgba(255,255,255,0.3)",
+    fontSize: 16,
+    fontWeight: "300",
+    paddingHorizontal: 2,
+  },
   calorieProgress: { gap: 8, marginBottom: 4 },
-  calorieProgressLabels: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  calorieProgressLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
   calorieLabel: { color: "rgba(255,255,255,0.6)", fontSize: 12 },
   calorieValue: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  macrosContainer: { flexDirection: "row", marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.2)", gap: 8 },
+  macrosContainer: {
+    flexDirection: "row",
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.2)",
+    gap: 8,
+  },
   macroItem: { flex: 1, gap: 4 },
   macroName: { color: "rgba(255,255,255,0.6)", fontSize: 11, textAlign: "center", marginBottom: 2 },
-  macroValue: { color: "#fff", fontSize: 12, fontWeight: "600", textAlign: "center", marginBottom: 4 },
+  macroValue: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 4,
+  },
   statsGrid: { flexDirection: "row", gap: 10 },
   statCard: { flex: 1, backgroundColor: "#1a1a1a", gap: 4 },
   statValue: { fontSize: 20, color: "#fff", fontWeight: "700", marginTop: 6 },
@@ -554,14 +703,28 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
   cardTitle: { color: "#fff", fontSize: 15, fontWeight: "600" },
   cardSub: { color: "#888", fontSize: 12, marginTop: 2 },
-  weightRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 },
+  weightRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: 16,
+  },
   weightValue: { fontSize: 30, color: "#fff", fontWeight: "700" },
   weightLabel: { fontSize: 12, color: "#888", marginTop: 2 },
   workoutsSection: { gap: 10 },
-  workoutsHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  workoutsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   sectionTitle: { color: "#ffffff", fontSize: 16, fontWeight: "600" },
   viewAllBtn: { color: "#22c55e", fontSize: 14 },
-  workoutCard: { backgroundColor: "#1a1a1a", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  workoutCard: {
+    backgroundColor: "#1a1a1a",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   workoutName: { color: "#fff", fontSize: 14, fontWeight: "500", marginBottom: 4 },
   workoutMeta: { color: "#888", fontSize: 12 },
   workoutBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },

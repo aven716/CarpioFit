@@ -8,6 +8,7 @@ export interface Exercise {
     sets: number;
     reps: string | null;
     duration: string | null;
+    
 }
 
 export interface DayPlan {
