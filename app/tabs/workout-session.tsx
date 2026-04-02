@@ -14,8 +14,7 @@ import {
     View,
 } from "react-native";
 import { supabase } from "../../lib/supabase";
-const [totalCaloriesBurned, setTotalCaloriesBurned] = useState(0);
-const [totalActiveMinutes, setTotalActiveMinutes] = useState(0);
+
 const { width } = Dimensions.get("window");
 const RAPIDAPI_KEY = process.env.EXPO_PUBLIC_RAPIDAPI_KEY;
 
@@ -346,7 +345,8 @@ export default function WorkoutSession() {
         dateStr: string;
         userId: string;
     }>();
-
+    const [totalCaloriesBurned, setTotalCaloriesBurned] = useState(0);
+    const [totalActiveMinutes, setTotalActiveMinutes] = useState(0);
     const exercises: Exercise[] = JSON.parse(params.exercises ?? "[]");
     const dayName = params.dayName ?? "Today";
     const focus = params.focus ?? "Workout";

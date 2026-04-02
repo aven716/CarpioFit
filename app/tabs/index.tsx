@@ -241,7 +241,7 @@ export default function Home() {
           .single(),
         supabase
           .from("daily_stats")
-          .select("calories_burned, steps, active_minutes, distance_km")
+          .select("calories_burned, steps, active_minutes, distance_km, calories_intake, protein_g, carbs_g, fat_g")
           .eq("user_id", user.id)
           .eq("date", today)
           .single(),
@@ -285,12 +285,22 @@ export default function Home() {
           activeMinutes: ds.active_minutes || 0,
           distanceKm: Number(ds.distance_km) || 0,
         });
-        // Seed last-synced refs so we don't immediately re-write unchanged data
         lastSyncedSteps.current = ds.steps || 0;
         lastSyncedCalories.current = Number(ds.calories_burned) || 0;
       }
+      const dsNutrition = dailyStatsRes.data;
+      const hasStoredNutrition = Number(dsNutrition?.calories_intake) > 0;
 
-      if (foodLogsRes.data) {
+      if (hasStoredNutrition) {
+        // daily_stats already has synced nutrition — use it directly
+        setCaloriesConsumed(Number(dsNutrition!.calories_intake));
+        setMacrosConsumed({
+          protein: Number(dsNutrition!.protein_g || 0),
+          carbs: Number(dsNutrition!.carbs_g || 0),
+          fat: Number(dsNutrition!.fat_g || 0),
+        });
+      } else if (foodLogsRes.data) {
+        // Fallback: aggregate from food_logs for today
         const todayStart = new Date(today);
         const tomorrow = new Date(todayStart);
         tomorrow.setDate(todayStart.getDate() + 1);
@@ -308,7 +318,22 @@ export default function Home() {
           { calories: 0, protein: 0, carbs: 0, fat: 0 }
         );
         setCaloriesConsumed(totals.calories);
-        setMacrosConsumed({ protein: totals.protein, carbs: totals.carbs, fat: totals.fat });
+        setMacrosConsumed({
+          protein: totals.protein,
+          carbs: totals.carbs,
+          fat: totals.fat,
+        });
+
+        if (totals.calories > 0 && user) {
+          await supabase.from("daily_stats").upsert({
+            user_id: user.id,
+            date: today,
+            calories_intake: totals.calories,
+            protein_g: totals.protein,
+            carbs_g: totals.carbs,
+            fat_g: totals.fat,
+          }, { onConflict: "user_id,date" });
+        }
       }
 
       if (workoutsRes.data && workoutsRes.data.length > 0) {

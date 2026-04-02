@@ -41,6 +41,7 @@ interface StatsData {
     totalActiveDays: number;
     currentStreak: number;
     totalCaloriesBurned: number; // ← NEW: aggregated from daily_stats
+    totalActiveMinutes: number; // ← ADD
 }
 
 interface AchievementItem {
@@ -79,6 +80,7 @@ export default function Profile() {
         totalActiveDays: 0,
         currentStreak: 0,
         totalCaloriesBurned: 0,
+        totalActiveMinutes: 0, // ← ADD
     });
     const [achievements, setAchievements] = useState<AchievementItem[]>([]);
     const [notifications, setNotifications] = useState(true);
@@ -133,7 +135,7 @@ export default function Profile() {
                 // ← NEW: All daily stats rows to aggregate calories_burned
                 supabase
                     .from("daily_stats")
-                    .select("calories_burned, total_active_days")
+                    .select("calories_burned, active_minutes, steps, distance_km, calories_intake, protein_g, carbs_g, fat_g")
                     .eq("user_id", user.id),
             ]);
 
@@ -150,9 +152,7 @@ export default function Profile() {
             }
 
             // Aggregate total calories burned across ALL days in daily_stats
-            const totalCaloriesBurned = dailyStatsRes.data
-                ?.reduce((sum, row) => sum + (Number(row.calories_burned) || 0), 0)
-                ?? 0;
+        
 
             // Workout totals from workouts table
             const totalWorkouts = workoutsRes.data?.length ?? 0;
@@ -162,12 +162,24 @@ export default function Profile() {
                     0
                 ) ?? 0;
 
+            const totalCaloriesBurned = dailyStatsRes.data
+                ?.reduce((sum, row) => sum + (Number(row.calories_burned) || 0), 0) ?? 0;
+
+            const totalActiveMinutes = dailyStatsRes.data
+                ?.reduce((sum, row) => sum + (Number(row.active_minutes) || 0), 0) ?? 0;
+
+            // Count days that had actual activity (more accurate than streaks table)
+            const activeDaysFromStats = dailyStatsRes.data
+                ?.filter(row => (Number(row.calories_burned) || 0) > 0 || (Number(row.active_minutes) || 0) > 0)
+                .length ?? 0;
+
             setStatsData({
                 totalWorkouts,
                 totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
-                totalActiveDays: streakRes.data?.total_active_days ?? 0,
+                totalActiveDays: streakRes.data?.total_active_days ?? activeDaysFromStats,
                 currentStreak: streakRes.data?.current_streak ?? 0,
                 totalCaloriesBurned: Math.round(totalCaloriesBurned),
+                totalActiveMinutes: Math.round(totalActiveMinutes),
             });
 
             // Build achievements list — show up to 4, mark earned ones
