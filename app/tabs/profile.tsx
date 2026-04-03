@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from "react";
 import {
     Alert,
+    Dimensions,
     ScrollView,
     StyleSheet,
     Switch,
@@ -24,6 +25,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import Svg, { Defs, LinearGradient, Path, Stop, Circle as SvgCircle, Line as SvgLine } from "react-native-svg";
 import { supabase } from "../../lib/supabase";
 
 interface UserData {
@@ -71,7 +73,68 @@ function ProgressBar({
         </View>
     );
 }
+const PROFILE_SCREEN_WIDTH = Dimensions.get("window").width;
 
+function WeightMiniChart({ logs, goalWeight }: {
+    logs: { weight_kg: number; logged_at: string }[];
+    goalWeight: number;
+}) {
+    const W = PROFILE_SCREEN_WIDTH - 80;
+    const H = 80;
+    const pL = 8, pR = 8, pT = 8, pB = 8;
+    const iW = W - pL - pR;
+    const iH = H - pT - pB;
+
+    const values = logs.map((l) => l.weight_kg);
+    const allValues = [...values, goalWeight].filter(v => v > 0);
+    if (allValues.length === 0) return null;
+
+    const minV = Math.min(...allValues) - 1;
+    const maxV = Math.max(...allValues) + 1;
+
+    const tx = (i: number) => pL + (i / Math.max(logs.length - 1, 1)) * iW;
+    const ty = (v: number) => pT + iH - ((v - minV) / (maxV - minV)) * iH;
+
+    const pts = logs.map((l, i) => ({ x: tx(i), y: ty(l.weight_kg) }));
+    const linePath = pts.reduce((acc, pt, i) => {
+        if (i === 0) return `M${pt.x},${pt.y}`;
+        const prev = pts[i - 1];
+        const cx = (prev.x + pt.x) / 2;
+        return `${acc} C${cx},${prev.y} ${cx},${pt.y} ${pt.x},${pt.y}`;
+    }, "");
+
+    const goalY = goalWeight > 0 ? ty(goalWeight) : null;
+
+    return (
+        <Svg width={W} height={H}>
+            <Defs>
+                <LinearGradient id="wmc" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0%" stopColor="#22c55e" stopOpacity="0.2" />
+                    <Stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
+                </LinearGradient>
+            </Defs>
+            {goalY !== null && (
+                <SvgLine x1={pL} y1={goalY} x2={W - pR} y2={goalY} stroke="#22c55e" strokeWidth="1" strokeDasharray="3,2" />
+            )}
+            {pts.length > 1 && (
+                <Path
+                    d={`${linePath} L${pts[pts.length - 1].x},${pT + iH} L${pL},${pT + iH} Z`}
+                    fill="url(#wmc)"
+                />
+            )}
+            <Path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" />
+            {pts.map((pt, i) => (
+                <SvgCircle
+                    key={i} cx={pt.x} cy={pt.y}
+                    r={i === pts.length - 1 ? 4 : 2}
+                    fill={i === pts.length - 1 ? "#22c55e" : "#3b82f6"}
+                    stroke={i === pts.length - 1 ? "#22c55e" : "#3b82f6"}
+                    strokeWidth="1"
+                />
+            ))}
+        </Svg>
+    );
+}
 export default function Profile() {
     const [userData, setUserData] = useState<UserData | null>(null);
     const [statsData, setStatsData] = useState<StatsData>({
@@ -85,6 +148,7 @@ export default function Profile() {
     const [achievements, setAchievements] = useState<AchievementItem[]>([]);
     const [notifications, setNotifications] = useState(true);
     const [loading, setLoading] = useState(true);
+    const [weightLogs, setWeightLogs] = useState<{ id: string; weight_kg: number; logged_at: string }[]>([]);
 
     useEffect(() => {
         const loadAllData = async () => {
@@ -98,7 +162,8 @@ export default function Profile() {
                 streakRes,
                 userAchievementsRes,
                 allAchievementsRes,
-                dailyStatsRes,   // ← NEW: fetch all daily_stats rows for this user
+                dailyStatsRes,
+                weightLogsRes   // ← NEW: fetch all daily_stats rows for this user
             ] = await Promise.all([
                 // Profile
                 supabase
@@ -114,6 +179,8 @@ export default function Profile() {
                     .eq("user_id", user.id)
                     .eq("completed", true),
 
+                    
+                
                 // Streak
                 supabase
                     .from("streaks")
@@ -137,6 +204,12 @@ export default function Profile() {
                     .from("daily_stats")
                     .select("calories_burned, active_minutes, steps, distance_km, calories_intake, protein_g, carbs_g, fat_g")
                     .eq("user_id", user.id),
+
+                supabase
+                    .from("weight_logs")
+                    .select("id, weight_kg, logged_at")
+                    .eq("user_id", user.id)
+                    .order("logged_at", { ascending: true }),
             ]);
 
             // Set profile
@@ -149,6 +222,11 @@ export default function Profile() {
                     goalWeight: profileRes.data.goal_weight?.toString() ?? "--",
                     fitnessGoal: profileRes.data.goal ?? "",
                 });
+            }
+
+
+            if (weightLogsRes.data) {
+                setWeightLogs(weightLogsRes.data);
             }
 
             // Aggregate total calories burned across ALL days in daily_stats
@@ -303,14 +381,40 @@ export default function Profile() {
                 </View>
 
                 {/* Goal Progress */}
+                {/* Weight Progress Card */}
                 <View style={styles.progressCard}>
                     <View style={styles.progressRow}>
                         <Text style={styles.progressLabel}>Weight Progress</Text>
                         <Text style={styles.progressValue}>
-                            {userData?.currentWeight || "--"} / {userData?.goalWeight || "--"} kg
+                            {userData?.currentWeight || "--"} → {userData?.goalWeight || "--"} kg
                         </Text>
                     </View>
                     <ProgressBar value={weightProgress} />
+
+                    {/* Weight trend mini chart */}
+                    {weightLogs.length >= 2 && (
+                        <View style={{ marginTop: 12 }}>
+                            <WeightMiniChart
+                                logs={weightLogs}
+                                goalWeight={parseFloat(userData?.goalWeight ?? "0")}
+                            />
+                        </View>
+                    )}
+
+                    {/* Recent logs */}
+                    {weightLogs.length > 0 && (
+                        <View style={styles.weightMiniList}>
+                            {weightLogs.slice(-3).reverse().map((log, i) => (
+                                <View key={log.id} style={styles.weightMiniItem}>
+                                    <View style={[styles.weightMiniDot, { backgroundColor: i === 0 ? "#22c55e" : "#3b82f6" }]} />
+                                    <Text style={styles.weightMiniWeight}>{log.weight_kg} kg</Text>
+                                    <Text style={styles.weightMiniDate}>
+                                        {new Date(log.logged_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                                    </Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
                 </View>
 
                 {/* ── Calories Burned Banner ─────────────────────────────── */}
@@ -696,5 +800,22 @@ const styles = StyleSheet.create({
     appInfoText: {
         color: "#555",
         fontSize: 12,
+    },
+
+    weightMiniList: {
+        marginTop: 10, gap: 6, paddingTop: 10,
+        borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)",
+    },
+    weightMiniItem: {
+        flexDirection: "row", alignItems: "center", gap: 8,
+    },
+    weightMiniDot: {
+        width: 7, height: 7, borderRadius: 4,
+    },
+    weightMiniWeight: {
+        color: "#fff", fontSize: 13, fontWeight: "600", flex: 1,
+    },
+    weightMiniDate: {
+        color: "#555", fontSize: 11,
     },
 });
