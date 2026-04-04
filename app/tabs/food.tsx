@@ -6,16 +6,19 @@ import {
     ChevronLeft,
     ChevronRight,
     Coffee,
+    Edit2,
     Moon,
     Plus,
     Search,
     Sun,
+    Trash2,
     TrendingUp,
     X,
 } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import {
     ActivityIndicator,
+    Alert,
     Dimensions,
     FlatList,
     Modal,
@@ -39,6 +42,8 @@ interface MealItem {
     carbs: number;
     fat: number;
     meal: string;
+    quantity: number;
+    mealId: string;
 }
 
 interface FoodResult {
@@ -71,7 +76,6 @@ const mealTypes = [
     { id: "snack", name: "Snacks", icon: Apple, color: "#22c55e", tint: "rgba(34,197,94,0.10)", border: "rgba(34,197,94,0.22)" },
 ];
 
-// ─── Helpers ─────────────────────────────────
 const toDateStr = (d: Date) => d.toISOString().split("T")[0];
 
 const formatDisplayDate = (dateStr: string) => {
@@ -106,7 +110,6 @@ function SimpleLineChart({
 
     const tx = (i: number) => pL + (i / Math.max(data.length - 1, 1)) * iW;
     const ty = (v: number) => pT + iH - (v / maxV) * iH;
-
     const pts = data.map((d, i) => ({ x: tx(i), y: ty(Number(d[valueKey] ?? 0)) }));
 
     const linePath = pts.reduce((acc, pt, i) => {
@@ -117,12 +120,7 @@ function SimpleLineChart({
     }, "");
 
     const areaPath = `${linePath} L${pts[pts.length - 1].x},${pT + iH} L${pL},${pT + iH} Z`;
-
-    const yTicks = [0, 0.5, 1].map((t) => ({
-        y: pT + iH - t * iH,
-        val: Math.round(t * maxV),
-    }));
-
+    const yTicks = [0, 0.5, 1].map((t) => ({ y: pT + iH - t * iH, val: Math.round(t * maxV) }));
     const xLabels = [0, Math.floor((data.length - 1) / 2), data.length - 1]
         .filter((v, i, a) => a.indexOf(v) === i)
         .map((i) => ({ x: tx(i), label: data[i]?.date.slice(5) ?? "" }));
@@ -143,36 +141,22 @@ function SimpleLineChart({
                     <Stop offset="100%" stopColor={color} stopOpacity="0" />
                 </LinearGradient>
             </Defs>
-
-            {yTicks.map((t) => (
-                <SvgLine key={t.val} x1={pL} y1={t.y} x2={W - pR} y2={t.y} stroke="#222" strokeWidth="1" />
+            {yTicks.map((t, idx) => (
+                <SvgLine key={idx} x1={pL} y1={t.y} x2={W - pR} y2={t.y} stroke="#222" strokeWidth="1" />
             ))}
-            {yTicks.map((t) => (
-                <SvgText key={`y${t.val}`} x={pL - 4} y={t.y + 4} fontSize="8" fill="#444" textAnchor="end">
-                    {t.val}
-                </SvgText>
+            {yTicks.map((t, idx) => (
+                <SvgText key={`y${idx}`} x={pL - 4} y={t.y + 4} fontSize="8" fill="#444" textAnchor="end">{t.val}</SvgText>
             ))}
-
             {goalLine !== undefined && (
-                <SvgLine x1={pL} y1={ty(goalLine)} x2={W - pR} y2={ty(goalLine)}
-                    stroke={color} strokeWidth="1" strokeDasharray="4,3" opacity="0.4" />
+                <SvgLine x1={pL} y1={ty(goalLine)} x2={W - pR} y2={ty(goalLine)} stroke={color} strokeWidth="1" strokeDasharray="4,3" opacity="0.4" />
             )}
-
             <Path d={areaPath} fill={`url(#g-${valueKey})`} />
             <Path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-
             {pts.map((pt, i) => (
-                <SvgCircle key={i} cx={pt.x} cy={pt.y}
-                    r={i === pts.length - 1 ? 4 : 2.5}
-                    fill={i === pts.length - 1 ? color : "#111"}
-                    stroke={color} strokeWidth="1.5"
-                />
+                <SvgCircle key={i} cx={pt.x} cy={pt.y} r={i === pts.length - 1 ? 4 : 2.5} fill={i === pts.length - 1 ? color : "#111"} stroke={color} strokeWidth="1.5" />
             ))}
-
-            {xLabels.map((xl) => (
-                <SvgText key={xl.label} x={xl.x} y={H - 4} fontSize="8" fill="#444" textAnchor="middle">
-                    {xl.label}
-                </SvgText>
+            {xLabels.map((xl, i) => (
+                <SvgText key={i} x={xl.x} y={H - 4} fontSize="8" fill="#444" textAnchor="middle">{xl.label}</SvgText>
             ))}
         </Svg>
     );
@@ -184,10 +168,7 @@ function TrendsSection({ userId, goalCalories }: { userId: string | null; goalCa
     const [loading, setLoading] = useState(true);
     const [days, setDays] = useState<7 | 14>(7);
 
-    useEffect(() => {
-        if (!userId) return;
-        load();
-    }, [userId, days]);
+    useEffect(() => { if (userId) load(); }, [userId, days]);
 
     const load = async () => {
         if (!userId) return;
@@ -196,7 +177,6 @@ function TrendsSection({ userId, goalCalories }: { userId: string | null; goalCa
             const end = new Date();
             const start = new Date();
             start.setDate(start.getDate() - days + 1);
-
             const { data: logs } = await supabase
                 .from("food_logs")
                 .select("calories, protein_g, carbs_g, fat_g, logged_at")
@@ -221,9 +201,7 @@ function TrendsSection({ userId, goalCalories }: { userId: string | null; goalCa
                 }
             });
             setData(Object.values(map).sort((a, b) => a.date.localeCompare(b.date)));
-        } finally {
-            setLoading(false);
-        }
+        } finally { setLoading(false); }
     };
 
     const macros = [
@@ -242,17 +220,12 @@ function TrendsSection({ userId, goalCalories }: { userId: string | null; goalCa
                 </View>
                 <View style={{ flexDirection: "row", gap: 6 }}>
                     {([7, 14] as const).map((d) => (
-                        <TouchableOpacity
-                            key={d}
-                            style={[ts.pill, days === d && ts.pillActive]}
-                            onPress={() => setDays(d)}
-                        >
+                        <TouchableOpacity key={d} style={[ts.pill, days === d && ts.pillActive]} onPress={() => setDays(d)}>
                             <Text style={[ts.pillText, days === d && ts.pillTextActive]}>{d}d</Text>
                         </TouchableOpacity>
                     ))}
                 </View>
             </View>
-
             {loading ? (
                 <View style={{ height: 80, alignItems: "center", justifyContent: "center" }}>
                     <ActivityIndicator color="#22c55e" size="small" />
@@ -261,12 +234,7 @@ function TrendsSection({ userId, goalCalories }: { userId: string | null; goalCa
                 macros.map((m) => (
                     <View key={m.key} style={ts.chartBlock}>
                         <Text style={[ts.chartLabel, { color: m.color }]}>{m.label}</Text>
-                        <SimpleLineChart
-                            data={data}
-                            valueKey={m.key}
-                            color={m.color}
-                            goalLine={m.key === "calories" ? goalCalories : undefined}
-                        />
+                        <SimpleLineChart data={data} valueKey={m.key} color={m.color} goalLine={m.key === "calories" ? goalCalories : undefined} />
                     </View>
                 ))
             )}
@@ -274,16 +242,150 @@ function TrendsSection({ userId, goalCalories }: { userId: string | null; goalCa
     );
 }
 
+// ─── Edit Food Modal ──────────────────────────
+function EditFoodModal({
+    visible,
+    item,
+    mealColor,
+    onClose,
+    onSave,
+}: {
+    visible: boolean;
+    item: MealItem | null;
+    mealColor: string;
+    onClose: () => void;
+    onSave: (id: string, quantity: number, newCalories: number, newProtein: number, newCarbs: number, newFat: number) => void;
+}) {
+    const [quantity, setQuantity] = useState("1");
+    const [saving, setSaving] = useState(false);
+
+    // Base per-serving values (item values / original quantity)
+    const base = item ? {
+        calories: item.calories / (item.quantity || 1),
+        protein: item.protein / (item.quantity || 1),
+        carbs: item.carbs / (item.quantity || 1),
+        fat: item.fat / (item.quantity || 1),
+    } : null;
+
+    useEffect(() => {
+        if (item) setQuantity((item.quantity || 1).toString());
+    }, [item, visible]);
+
+    const qty = parseFloat(quantity) || 1;
+    const adjusted = base ? {
+        calories: Math.round(base.calories * qty),
+        protein: Math.round(base.protein * qty * 10) / 10,
+        carbs: Math.round(base.carbs * qty * 10) / 10,
+        fat: Math.round(base.fat * qty * 10) / 10,
+    } : null;
+
+    const handleSave = async () => {
+        if (!item || !adjusted) return;
+        setSaving(true);
+        const { error } = await supabase
+            .from("food_logs")
+            .update({
+                calories: adjusted.calories,
+                protein_g: adjusted.protein,
+                carbs_g: adjusted.carbs,
+                fat_g: adjusted.fat,
+                quantity: qty,
+            })
+            .eq("id", item.id);
+
+        if (!error) {
+            onSave(item.id, qty, adjusted.calories, adjusted.protein, adjusted.carbs, adjusted.fat);
+        } else {
+            Alert.alert("Error", "Could not update food log.");
+        }
+        setSaving(false);
+    };
+
+    if (!item || !base || !adjusted) return null;
+
+    return (
+        <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+            <View style={s.modalOverlay}>
+                <View style={s.modalContent}>
+                    <View style={s.modalHeader}>
+                        <TouchableOpacity onPress={onClose}><X size={22} color="#888" /></TouchableOpacity>
+                        <Text style={s.modalTitle} numberOfLines={1}>{item.name}</Text>
+                        <View style={{ width: 22 }} />
+                    </View>
+
+                    {/* Live calorie preview */}
+                    <View style={[s.calorieHighlight, { backgroundColor: `${mealColor}18` }]}>
+                        <Text style={[s.calorieHighlightNumber, { color: mealColor }]}>{adjusted.calories}</Text>
+                        <Text style={s.calorieHighlightLabel}>kcal</Text>
+                    </View>
+
+                    {/* Macro grid */}
+                    <View style={s.nutritionGrid}>
+                        {[
+                            { label: "Protein", value: adjusted.protein, color: "#f97316" },
+                            { label: "Carbs", value: adjusted.carbs, color: "#3b82f6" },
+                            { label: "Fat", value: adjusted.fat, color: "#a855f7" },
+                        ].map((n) => (
+                            <View key={n.label} style={s.nutritionCard}>
+                                <Text style={[s.nutritionValue, { color: n.color }]}>{n.value}g</Text>
+                                <Text style={s.nutritionLabel}>{n.label}</Text>
+                            </View>
+                        ))}
+                    </View>
+
+                    {/* Quantity */}
+                    <View style={s.quantitySection}>
+                        <Text style={s.modalLabel}>Servings</Text>
+                        <View style={s.quantityRow}>
+                            <TouchableOpacity
+                                style={s.quantityBtn}
+                                onPress={() => setQuantity((p) => Math.max(0.5, (parseFloat(p) || 1) - 0.5).toString())}
+                            >
+                                <Text style={s.quantityBtnText}>−</Text>
+                            </TouchableOpacity>
+                            <TextInput
+                                value={quantity}
+                                onChangeText={setQuantity}
+                                keyboardType="decimal-pad"
+                                style={s.quantityInput}
+                                selectTextOnFocus
+                            />
+                            <TouchableOpacity
+                                style={s.quantityBtn}
+                                onPress={() => setQuantity((p) => ((parseFloat(p) || 1) + 0.5).toString())}
+                            >
+                                <Text style={s.quantityBtnText}>+</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    <TouchableOpacity
+                        style={[s.logBtn, { backgroundColor: mealColor }, saving && { opacity: 0.6 }]}
+                        onPress={handleSave}
+                        disabled={saving}
+                    >
+                        {saving
+                            ? <ActivityIndicator size="small" color="#fff" />
+                            : <Text style={[s.logBtnText, { color: "#fff" }]}>Save Changes</Text>
+                        }
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
 // ─── Main Screen ──────────────────────────────
 export default function FoodLogging() {
     const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
     const [showDatePicker, setShowDatePicker] = useState(false);
-
     const [meals, setMeals] = useState<MealItem[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedMeal, setSelectedMeal] = useState("breakfast");
     const [modalVisible, setModalVisible] = useState(false);
     const [detailModalVisible, setDetailModalVisible] = useState(false);
+    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [editingItem, setEditingItem] = useState<MealItem | null>(null);
     const [selectedFood, setSelectedFood] = useState<FoodResult | null>(null);
     const [quantity, setQuantity] = useState("1");
     const [searchResults, setSearchResults] = useState<FoodResult[]>([]);
@@ -301,7 +403,7 @@ export default function FoodLogging() {
 
             const { data: logs } = await supabase
                 .from("food_logs")
-                .select("id, food_name, calories, protein_g, carbs_g, fat_g, meal_id")
+                .select("id, food_name, calories, protein_g, carbs_g, fat_g, meal_id, quantity")
                 .eq("user_id", user.id)
                 .gte("logged_at", `${selectedDate}T00:00:00`)
                 .lte("logged_at", `${selectedDate}T23:59:59`);
@@ -313,20 +415,20 @@ export default function FoodLogging() {
                 .eq("date", selectedDate);
 
             if (logs && mealsData) {
-                setMeals(
-                    logs.map((log) => {
-                        const meal = mealsData.find((m) => m.id === log.meal_id);
-                        return {
-                            id: log.id,
-                            name: log.food_name,
-                            calories: Number(log.calories),
-                            protein: Number(log.protein_g),
-                            carbs: Number(log.carbs_g),
-                            fat: Number(log.fat_g),
-                            meal: meal?.meal_type ?? "snack",
-                        };
-                    })
-                );
+                setMeals(logs.map((log) => {
+                    const meal = mealsData.find((m) => m.id === log.meal_id);
+                    return {
+                        id: log.id,
+                        name: log.food_name,
+                        calories: Number(log.calories),
+                        protein: Number(log.protein_g),
+                        carbs: Number(log.carbs_g),
+                        fat: Number(log.fat_g),
+                        meal: meal?.meal_type ?? "snack",
+                        quantity: Number(log.quantity ?? 1),
+                        mealId: log.meal_id ?? "",
+                    };
+                }));
             } else {
                 setMeals([]);
             }
@@ -338,7 +440,6 @@ export default function FoodLogging() {
                 .single();
             if (profile?.daily_calories) setDailyCalorieGoal(profile.daily_calories);
         };
-
         loadData();
     }, [selectedDate]);
 
@@ -350,17 +451,15 @@ export default function FoodLogging() {
                 const res = await fetch(`${SUPABASE_FUNCTION_URL}?q=${encodeURIComponent(searchQuery)}`);
                 const data = await res.json();
                 if (data.hints) {
-                    setSearchResults(
-                        data.hints.slice(0, 15).map((hint: any) => ({
-                            foodId: hint.food.foodId,
-                            label: hint.food.label,
-                            calories: Math.round(hint.food.nutrients.ENERC_KCAL ?? 0),
-                            protein: Math.round(hint.food.nutrients.PROCNT ?? 0),
-                            carbs: Math.round(hint.food.nutrients.CHOCDF ?? 0),
-                            fat: Math.round(hint.food.nutrients.FAT ?? 0),
-                            fiber: Math.round(hint.food.nutrients.FIBTG ?? 0),
-                        }))
-                    );
+                    setSearchResults(data.hints.slice(0, 15).map((hint: any) => ({
+                        foodId: hint.food.foodId,
+                        label: hint.food.label,
+                        calories: Math.round(hint.food.nutrients.ENERC_KCAL ?? 0),
+                        protein: Math.round(hint.food.nutrients.PROCNT ?? 0),
+                        carbs: Math.round(hint.food.nutrients.CHOCDF ?? 0),
+                        fat: Math.round(hint.food.nutrients.FAT ?? 0),
+                        fiber: Math.round(hint.food.nutrients.FIBTG ?? 0),
+                    })));
                 }
             } catch (err) { console.error(err); }
             finally { setSearching(false); }
@@ -414,27 +513,23 @@ export default function FoodLogging() {
                 mealId = nm!.id;
             }
 
-            await supabase.from("food_logs").insert({
+            const { data: inserted } = await supabase.from("food_logs").insert({
                 user_id: userId, meal_id: mealId,
                 food_name: adj.label, calories: adj.calories,
                 protein_g: adj.protein, carbs_g: adj.carbs, fat_g: adj.fat,
                 quantity: parseFloat(quantity) || 1, unit: "serving",
                 edamam_food_id: adj.foodId,
-                // Log at noon on the selected date so date filtering works correctly
                 logged_at: `${selectedDate}T12:00:00`,
-            });
-
-            await supabase.rpc("increment_daily_nutrition", {
-                user_id_input: userId,
-                calories_input: adj.calories, protein_input: adj.protein,
-                carbs_input: adj.carbs, fat_input: adj.fat,
-            });
+            }).select("id").single();
 
             setMeals((prev) => [
                 ...prev,
                 {
-                    id: Date.now().toString(), name: adj.label, calories: adj.calories,
-                    protein: adj.protein, carbs: adj.carbs, fat: adj.fat, meal: selectedMeal
+                    id: inserted?.id ?? Date.now().toString(),
+                    name: adj.label, calories: adj.calories,
+                    protein: adj.protein, carbs: adj.carbs, fat: adj.fat,
+                    meal: selectedMeal, quantity: parseFloat(quantity) || 1,
+                    mealId,
                 },
             ]);
             setDetailModalVisible(false);
@@ -446,6 +541,56 @@ export default function FoodLogging() {
         finally { setSaving(false); }
     };
 
+    // ─── Delete food log ──────────────────────
+    const handleDeleteFood = (item: MealItem) => {
+        const mt = mealTypes.find((m) => m.id === item.meal);
+        Alert.alert(
+            "Remove Food",
+            `Remove "${item.name}" from ${mt?.name ?? item.meal}?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Remove", style: "destructive",
+                    onPress: async () => {
+                        const { error } = await supabase
+                            .from("food_logs")
+                            .delete()
+                            .eq("id", item.id);
+
+                        if (!error) {
+                            setMeals((prev) => prev.filter((m) => m.id !== item.id));
+                        } else {
+                            Alert.alert("Error", "Could not remove food log.");
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    // ─── Edit food log ────────────────────────
+    const handleEditFood = (item: MealItem) => {
+        setEditingItem(item);
+        setEditModalVisible(true);
+    };
+
+    const handleEditSave = (
+        id: string,
+        qty: number,
+        newCalories: number,
+        newProtein: number,
+        newCarbs: number,
+        newFat: number
+    ) => {
+        setMeals((prev) => prev.map((m) =>
+            m.id === id
+                ? { ...m, calories: newCalories, protein: newProtein, carbs: newCarbs, fat: newFat, quantity: qty }
+                : m
+        ));
+        setEditModalVisible(false);
+        setEditingItem(null);
+    };
+
     const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
     const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
     const totalCarbs = meals.reduce((s, m) => s + m.carbs, 0);
@@ -454,25 +599,25 @@ export default function FoodLogging() {
     const adj = getAdjusted();
     const isToday = selectedDate === toDateStr(new Date());
 
+    const editingMealColor = editingItem
+        ? (mealTypes.find((m) => m.id === editingItem.meal)?.color ?? "#22c55e")
+        : "#22c55e";
+
     return (
         <View style={s.container}>
             <StatusBar style="light" />
 
-            {/* ── Header ── */}
+            {/* Header */}
             <View style={s.header}>
                 <Text style={s.headerTitle}>Food Logging</Text>
-
-                {/* Date navigator */}
                 <View style={s.dateRow}>
                     <TouchableOpacity style={s.dateArrow} onPress={() => shiftDate(-1)}>
                         <ChevronLeft size={18} color="#888" />
                     </TouchableOpacity>
-
                     <TouchableOpacity style={s.datePill} onPress={() => setShowDatePicker(true)}>
                         <Calendar size={13} color="#22c55e" />
                         <Text style={s.datePillText}>{formatDisplayDate(selectedDate)}</Text>
                     </TouchableOpacity>
-
                     <TouchableOpacity
                         style={[s.dateArrow, isToday && { opacity: 0.3 }]}
                         onPress={() => shiftDate(1)}
@@ -481,8 +626,6 @@ export default function FoodLogging() {
                         <ChevronRight size={18} color="#888" />
                     </TouchableOpacity>
                 </View>
-
-                {/* Calorie summary */}
                 <View style={s.summaryCard}>
                     <View style={s.summaryTop}>
                         <View>
@@ -496,7 +639,6 @@ export default function FoodLogging() {
                             <Text style={s.addFoodBtnText}>Add Food</Text>
                         </TouchableOpacity>
                     </View>
-
                     <View style={s.macroRow}>
                         {[
                             { label: "Protein", value: totalProtein },
@@ -512,7 +654,7 @@ export default function FoodLogging() {
                 </View>
             </View>
 
-            {/* ── Body ── */}
+            {/* Body */}
             <ScrollView contentContainerStyle={s.body}>
                 {mealTypes.map((mt) => {
                     const Icon = mt.icon;
@@ -533,9 +675,29 @@ export default function FoodLogging() {
                                     <View style={[s.accentBar, { backgroundColor: mt.color }]} />
                                     <View style={s.mealCardLeft}>
                                         <Text style={s.mealName}>{item.name}</Text>
-                                        <Text style={s.mealMacros}>P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g</Text>
+                                        <Text style={s.mealMacros}>
+                                            {item.quantity !== 1 ? `${item.quantity} serving${item.quantity !== 1 ? "s" : ""} • ` : ""}
+                                            P: {item.protein}g • C: {item.carbs}g • F: {item.fat}g
+                                        </Text>
                                     </View>
-                                    <Text style={[s.mealKcal, { color: mt.color }]}>{item.calories}</Text>
+                                    <View style={s.mealCardRight}>
+                                        <Text style={[s.mealKcal, { color: mt.color }]}>{item.calories}</Text>
+                                        {/* ── Edit & Delete buttons ── */}
+                                        <View style={s.mealActions}>
+                                            <TouchableOpacity
+                                                style={s.mealActionBtn}
+                                                onPress={() => handleEditFood(item)}
+                                            >
+                                                <Edit2 size={13} color="#3b82f6" />
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[s.mealActionBtn, s.mealActionBtnDelete]}
+                                                onPress={() => handleDeleteFood(item)}
+                                            >
+                                                <Trash2 size={13} color="#ef4444" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
                                 </View>
                             )) : (
                                 <View style={s.emptyCard}>
@@ -546,11 +708,10 @@ export default function FoodLogging() {
                     );
                 })}
 
-                {/* ── Trends ── */}
                 <TrendsSection userId={userId} goalCalories={dailyCalorieGoal} />
             </ScrollView>
 
-            {/* ── Native Date Picker ── */}
+            {/* Native Date Picker */}
             {showDatePicker && (
                 <DateTimePicker
                     value={new Date(selectedDate + "T00:00:00")}
@@ -564,7 +725,7 @@ export default function FoodLogging() {
                 />
             )}
 
-            {/* ── Search Modal ── */}
+            {/* Search Modal */}
             <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
                 <View style={s.modalOverlay}>
                     <View style={s.modalContent}>
@@ -628,7 +789,7 @@ export default function FoodLogging() {
                 </View>
             </Modal>
 
-            {/* ── Detail Modal ── */}
+            {/* Detail Modal */}
             <Modal visible={detailModalVisible} animationType="slide" transparent onRequestClose={() => setDetailModalVisible(false)}>
                 <View style={s.modalOverlay}>
                     <View style={s.modalContent}>
@@ -696,16 +857,22 @@ export default function FoodLogging() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Edit Modal */}
+            <EditFoodModal
+                visible={editModalVisible}
+                item={editingItem}
+                mealColor={editingMealColor}
+                onClose={() => { setEditModalVisible(false); setEditingItem(null); }}
+                onSave={handleEditSave}
+            />
         </View>
     );
 }
 
 // ─── Trend Styles ─────────────────────────────
 const ts = StyleSheet.create({
-    wrap: {
-        backgroundColor: "#111", borderRadius: 20, padding: 16,
-        marginTop: 8, borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    wrap: { backgroundColor: "#111", borderRadius: 20, padding: 16, marginTop: 8, borderWidth: 1, borderColor: "#2a2a2a" },
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
     title: { color: "#fff", fontSize: 14, fontWeight: "700" },
     pill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: "#2a2a2a", borderWidth: 1, borderColor: "#333" },
@@ -723,11 +890,7 @@ const s = StyleSheet.create({
     headerTitle: { color: "#fff", fontSize: 18, fontWeight: "600" },
     dateRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 },
     dateArrow: { padding: 6, borderRadius: 8, backgroundColor: "#2a2a2a" },
-    datePill: {
-        flexDirection: "row", alignItems: "center", gap: 7,
-        backgroundColor: "#2a2a2a", paddingHorizontal: 16, paddingVertical: 8,
-        borderRadius: 20, borderWidth: 1, borderColor: "#3a3a3a", flex: 1, justifyContent: "center",
-    },
+    datePill: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#2a2a2a", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: "#3a3a3a", flex: 1, justifyContent: "center" },
     datePillText: { color: "#fff", fontSize: 14, fontWeight: "600" },
     summaryCard: { backgroundColor: "#1a3329", borderRadius: 16, padding: 16, gap: 12 },
     summaryTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
@@ -747,10 +910,22 @@ const s = StyleSheet.create({
     mealCalories: { color: "#888", fontSize: 13 },
     mealCard: { borderRadius: 14, padding: 14, paddingLeft: 18, flexDirection: "row", justifyContent: "space-between", alignItems: "center", overflow: "hidden", position: "relative" },
     accentBar: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 14, borderBottomLeftRadius: 14 },
-    mealCardLeft: { flex: 1, marginRight: 12 },
+    mealCardLeft: { flex: 1, marginRight: 10 },
     mealName: { color: "#fff", fontSize: 14, fontWeight: "500", marginBottom: 4 },
     mealMacros: { color: "#aaa", fontSize: 12 },
+    mealCardRight: { alignItems: "flex-end", gap: 6 },
     mealKcal: { fontSize: 15, fontWeight: "600" },
+    mealActions: { flexDirection: "row", gap: 6 },
+    mealActionBtn: {
+        width: 28, height: 28, borderRadius: 8,
+        backgroundColor: "rgba(59,130,246,0.1)",
+        alignItems: "center", justifyContent: "center",
+        borderWidth: 1, borderColor: "rgba(59,130,246,0.15)",
+    },
+    mealActionBtnDelete: {
+        backgroundColor: "rgba(239,68,68,0.1)",
+        borderColor: "rgba(239,68,68,0.15)",
+    },
     emptyCard: { backgroundColor: "#1a1a1a", borderRadius: 14, padding: 20, alignItems: "center" },
     emptyText: { color: "#555", fontSize: 13 },
     modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },

@@ -19,6 +19,7 @@ import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { supabase } from "../../lib/supabase";
 
 const { width, height } = Dimensions.get("window");
+const isSmallScreen = height < 700;
 const RAPIDAPI_KEY = process.env.EXPO_PUBLIC_RAPIDAPI_KEY;
 
 // ─── Types ────────────────────────────────────
@@ -76,11 +77,7 @@ function getMET(exerciseName: string): number {
     return 5;
 }
 
-function calculateCaloriesBurned(
-    exerciseName: string,
-    durationMinutes: number,
-    weightKg = 70
-): number {
+function calculateCaloriesBurned(exerciseName: string, durationMinutes: number, weightKg = 70): number {
     const met = getMET(exerciseName);
     return Math.round(met * weightKg * (durationMinutes / 60));
 }
@@ -110,7 +107,7 @@ function formatDuration(seconds: number): string {
 
 function formatPace(speedMs: number): string {
     if (speedMs < 0.3) return "--:--";
-    const paceSec = 1000 / speedMs; // seconds per km
+    const paceSec = 1000 / speedMs;
     const m = Math.floor(paceSec / 60);
     const s = Math.round(paceSec % 60);
     return `${m}:${String(s).padStart(2, "0")}`;
@@ -146,12 +143,7 @@ async function fetchExerciseData(name: string): Promise<ExerciseData | null> {
         const normalized = normalizeName(name);
         const res = await fetch(
             `https://exercisedb.p.rapidapi.com/exercises/name/${encodeURIComponent(normalized)}?limit=3&offset=0`,
-            {
-                headers: {
-                    "X-RapidAPI-Key": RAPIDAPI_KEY ?? "",
-                    "X-RapidAPI-Host": "exercisedb.p.rapidapi.com",
-                },
-            }
+            { headers: { "X-RapidAPI-Key": RAPIDAPI_KEY ?? "", "X-RapidAPI-Host": "exercisedb.p.rapidapi.com" } }
         );
         const data = await res.json();
         if (!Array.isArray(data) || data.length === 0) {
@@ -159,21 +151,14 @@ async function fetchExerciseData(name: string): Promise<ExerciseData | null> {
             if (firstWord === normalized) return null;
             const fb = await fetch(
                 `https://exercisedb.p.rapidapi.com/exercises/name/${encodeURIComponent(firstWord)}?limit=1&offset=0`,
-                {
-                    headers: {
-                        "X-RapidAPI-Key": RAPIDAPI_KEY ?? "",
-                        "X-RapidAPI-Host": "exercisedb.p.rapidapi.com",
-                    },
-                }
+                { headers: { "X-RapidAPI-Key": RAPIDAPI_KEY ?? "", "X-RapidAPI-Host": "exercisedb.p.rapidapi.com" } }
             );
             const fbData = await fb.json();
             if (!fbData?.length) return null;
             return buildExerciseData(fbData[0]);
         }
         return buildExerciseData(data[0]);
-    } catch {
-        return null;
-    }
+    } catch { return null; }
 }
 
 function buildExerciseData(ex: any): ExerciseData {
@@ -293,108 +278,56 @@ function CardioTracker({
     const [distanceMeters, setDistanceMeters] = useState(0);
     const [currentSpeedMs, setCurrentSpeedMs] = useState(0);
 
-    // Track distance across pauses
     const lastCoordRef = useRef<Coordinate | null>(null);
     const isPausedRef = useRef(false);
 
-    const caloriesBurned = calculateCaloriesBurned(
-        exercise.name,
-        elapsedSeconds / 60,
-        weightKg
-    );
+    const caloriesBurned = calculateCaloriesBurned(exercise.name, elapsedSeconds / 60, weightKg);
 
-    // ─── Request location permission ─────────
     useEffect(() => {
         (async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== "granted") {
-                setLocationPermission("denied");
-                return;
-            }
+            if (status !== "granted") { setLocationPermission("denied"); return; }
             setLocationPermission("granted");
-
-            // Get initial position to center map
             try {
-                const pos = await Location.getCurrentPositionAsync({
-                    accuracy: Location.Accuracy.Balanced,
-                });
-                const coord = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-                setCurrentLocation(coord);
+                const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                setCurrentLocation({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
             } catch { /* ignore */ }
         })();
 
-        // Handle app going to background
-        const sub = AppState.addEventListener("change", (nextState) => {
-            appStateRef.current = nextState;
-        });
-
-        return () => {
-            sub.remove();
-            stopTracking();
-        };
+        const sub = AppState.addEventListener("change", (nextState) => { appStateRef.current = nextState; });
+        return () => { sub.remove(); stopTracking(); };
     }, []);
 
-    // ─── Timer ───────────────────────────────
     const startTimer = useCallback(() => {
         if (timerRef.current) clearInterval(timerRef.current);
         timerRef.current = setInterval(() => {
-            if (!isPausedRef.current) {
-                setElapsedSeconds((s) => s + 1);
-            }
+            if (!isPausedRef.current) setElapsedSeconds((s) => s + 1);
         }, 1000);
     }, []);
 
     const stopTimer = useCallback(() => {
-        if (timerRef.current) {
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-        }
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     }, []);
 
-    // ─── Location subscription ────────────────
     const startLocationTracking = useCallback(async () => {
-        if (locationSub.current) {
-            locationSub.current.remove();
-            locationSub.current = null;
-        }
-
+        if (locationSub.current) { locationSub.current.remove(); locationSub.current = null; }
         locationSub.current = await Location.watchPositionAsync(
-            {
-                accuracy: Location.Accuracy.BestForNavigation,
-                timeInterval: 2000,        // every 2 seconds
-                distanceInterval: 5,        // or every 5 meters
-            },
+            { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 2000, distanceInterval: 5 },
             (loc) => {
                 if (isPausedRef.current) return;
-
-                const coord: Coordinate = {
-                    latitude: loc.coords.latitude,
-                    longitude: loc.coords.longitude,
-                };
+                const coord: Coordinate = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
                 const speed = loc.coords.speed ?? 0;
                 setCurrentSpeedMs(Math.max(0, speed));
                 setCurrentLocation(coord);
-
-                // Accumulate distance
                 if (lastCoordRef.current) {
                     const d = haversineDistance(lastCoordRef.current, coord);
-                    // Filter GPS jitter: ignore jumps < 1m or > 50m per 2s
-                    if (d > 1 && d < 100) {
-                        setDistanceMeters((prev) => prev + d);
-                    }
+                    if (d > 1 && d < 100) setDistanceMeters((prev) => prev + d);
                 }
                 lastCoordRef.current = coord;
-
                 setRoute((prev) => {
                     const updated = [...prev, coord];
-                    // Animate map to follow
                     mapRef.current?.animateToRegion(
-                        {
-                            latitude: coord.latitude,
-                            longitude: coord.longitude,
-                            latitudeDelta: 0.003,
-                            longitudeDelta: 0.003,
-                        },
+                        { latitude: coord.latitude, longitude: coord.longitude, latitudeDelta: 0.003, longitudeDelta: 0.003 },
                         300
                     );
                     return updated;
@@ -409,41 +342,25 @@ function CardioTracker({
         stopTimer();
     }, [stopTimer]);
 
-    // ─── Controls ────────────────────────────
     const handleStart = async () => {
-        setHasStarted(true);
-        setIsTracking(true);
-        setIsPaused(false);
-        isPausedRef.current = false;
-        lastCoordRef.current = currentLocation;
-        await startLocationTracking();
-        startTimer();
+        setHasStarted(true); setIsTracking(true); setIsPaused(false);
+        isPausedRef.current = false; lastCoordRef.current = currentLocation;
+        await startLocationTracking(); startTimer();
     };
 
-    const handlePause = () => {
-        setIsPaused(true);
-        isPausedRef.current = true;
-    };
-
-    const handleResume = () => {
-        setIsPaused(false);
-        isPausedRef.current = false;
-        lastCoordRef.current = null; // reset to avoid gap-distance spike
-    };
+    const handlePause = () => { setIsPaused(true); isPausedRef.current = true; };
+    const handleResume = () => { setIsPaused(false); isPausedRef.current = false; lastCoordRef.current = null; };
 
     const handleFinish = () => {
         Alert.alert(
             "Finish Cardio?",
-            `You've covered ${(distanceMeters / 1000).toFixed(2)} km in ${formatDuration(elapsedSeconds)}.`,
+            `${(distanceMeters / 1000).toFixed(2)} km in ${formatDuration(elapsedSeconds)}.`,
             [
                 { text: "Keep Going", style: "cancel" },
                 {
-                    text: "Finish",
-                    onPress: () => {
+                    text: "Finish", onPress: () => {
                         stopTracking();
-                        const avgSpeedKmh = elapsedSeconds > 0
-                            ? (distanceMeters / 1000) / (elapsedSeconds / 3600)
-                            : 0;
+                        const avgSpeedKmh = elapsedSeconds > 0 ? (distanceMeters / 1000) / (elapsedSeconds / 3600) : 0;
                         onFinish({
                             distanceKm: Math.round((distanceMeters / 1000) * 100) / 100,
                             durationSeconds: elapsedSeconds,
@@ -461,15 +378,13 @@ function CardioTracker({
     const speedKmh = currentSpeedMs * 3.6;
     const pace = formatPace(currentSpeedMs);
 
-    // ─── Permission Denied ────────────────────
     if (locationPermission === "denied") {
         return (
             <View style={ct.permissionBox}>
                 <Text style={ct.permissionEmoji}>📍</Text>
                 <Text style={ct.permissionTitle}>Location Required</Text>
                 <Text style={ct.permissionSub}>
-                    CarpioFit needs location access to track your route and distance.
-                    Please enable it in Settings.
+                    CarpioFit needs location access to track your route and distance. Please enable it in Settings.
                 </Text>
                 <TouchableOpacity style={ct.skipCardioBtn} onPress={onSkip}>
                     <Text style={ct.skipCardioBtnText}>Skip Cardio Tracking</Text>
@@ -478,7 +393,6 @@ function CardioTracker({
         );
     }
 
-    // ─── Loading ──────────────────────────────
     if (locationPermission === "loading") {
         return (
             <View style={ct.permissionBox}>
@@ -490,27 +404,16 @@ function CardioTracker({
 
     return (
         <View style={ct.container}>
-            {/* ── Map ── */}
-            <View style={ct.mapWrapper}>
+            {/* ── Map — slightly shorter on small screens ── */}
+            <View style={[ct.mapWrapper, { height: isSmallScreen ? height * 0.35 : height * 0.42 }]}>
                 <MapView
                     ref={mapRef}
                     provider={PROVIDER_DEFAULT}
                     style={ct.map}
                     initialRegion={
                         currentLocation
-                            ? {
-                                latitude: currentLocation.latitude,
-                                longitude: currentLocation.longitude,
-                                latitudeDelta: 0.008,
-                                longitudeDelta: 0.008,
-                            }
-                            : {
-                                // Default: Manila, Philippines
-                                latitude: 14.5995,
-                                longitude: 120.9842,
-                                latitudeDelta: 0.05,
-                                longitudeDelta: 0.05,
-                            }
+                            ? { latitude: currentLocation.latitude, longitude: currentLocation.longitude, latitudeDelta: 0.008, longitudeDelta: 0.008 }
+                            : { latitude: 14.5995, longitude: 120.9842, latitudeDelta: 0.05, longitudeDelta: 0.05 }
                     }
                     showsUserLocation
                     followsUserLocation={isTracking && !isPaused}
@@ -518,35 +421,25 @@ function CardioTracker({
                     mapType="standard"
                     userInterfaceStyle="dark"
                 >
-                    {/* Route polyline */}
                     {route.length > 1 && (
-                        <Polyline
-                            coordinates={route}
-                            strokeColor="#22c55e"
-                            strokeWidth={4}
-                            lineDashPattern={undefined}
-                        />
+                        <Polyline coordinates={route} strokeColor="#22c55e" strokeWidth={4} />
                     )}
-                    {/* Start marker */}
                     {route.length > 0 && (
                         <Marker coordinate={route[0]} anchor={{ x: 0.5, y: 0.5 }}>
-                            <View style={ct.startMarker}>
-                                <Text style={ct.startMarkerText}>S</Text>
-                            </View>
+                            <View style={ct.startMarker}><Text style={ct.startMarkerText}>S</Text></View>
                         </Marker>
                     )}
                 </MapView>
 
-                {/* Overlay: exercise name + skip */}
+                {/* Top overlay: name + skip */}
                 <View style={ct.mapTopOverlay}>
                     <View style={ct.exerciseNameBadge}>
-                        <Text style={ct.exerciseNameBadgeText}>
-                            {exercise.name}
-                            {exercise.duration ? `  •  ${exercise.duration}` : ""}
+                        <Text style={ct.exerciseNameBadgeText} numberOfLines={1}>
+                            {exercise.name}{exercise.duration ? `  ·  ${exercise.duration}` : ""}
                         </Text>
                     </View>
                     <TouchableOpacity style={ct.skipOverlayBtn} onPress={onSkip}>
-                        <SkipForward size={16} color="#fff" />
+                        <SkipForward size={15} color="#fff" />
                     </TouchableOpacity>
                 </View>
 
@@ -554,31 +447,34 @@ function CardioTracker({
                 {isTracking && (
                     <View style={[ct.trackingPill, isPaused && ct.trackingPillPaused]}>
                         <View style={[ct.trackingDot, isPaused && ct.trackingDotPaused]} />
-                        <Text style={[ct.trackingText, isPaused && ct.trackingTextPaused]}>
-                            {isPaused ? "PAUSED" : "TRACKING"}
-                        </Text>
+                        <Text style={ct.trackingText}>{isPaused ? "PAUSED" : "TRACKING"}</Text>
                     </View>
                 )}
             </View>
 
             {/* ── Stats Panel ── */}
             <View style={ct.statsPanel}>
-                {/* Timer row */}
-                <View style={ct.timerRow}>
-                    <Text style={ct.timerValue}>{formatDuration(elapsedSeconds)}</Text>
-                    <Text style={ct.timerLabel}>elapsed</Text>
+                {/* Timer + pace in one compact row */}
+                <View style={ct.topRow}>
+                    <View style={ct.timerBlock}>
+                        <Text style={ct.timerValue}>{formatDuration(elapsedSeconds)}</Text>
+                        <Text style={ct.timerLabel}>elapsed</Text>
+                    </View>
+                    <View style={ct.divider} />
+                    <View style={ct.paceBlock}>
+                        <Text style={ct.paceValue}>{pace}</Text>
+                        <Text style={ct.timerLabel}>/km pace</Text>
+                    </View>
                 </View>
 
-                {/* 3-stat grid */}
+                {/* 3-stat grid — compact */}
                 <View style={ct.statsGrid}>
                     <View style={ct.statBox}>
                         <Text style={ct.statVal}>{distanceKm.toFixed(2)}</Text>
                         <Text style={ct.statUnit}>km</Text>
                     </View>
                     <View style={[ct.statBox, ct.statBoxCenter]}>
-                        <Text style={[ct.statVal, { color: "#3b82f6" }]}>
-                            {speedKmh.toFixed(1)}
-                        </Text>
+                        <Text style={[ct.statVal, { color: "#3b82f6" }]}>{speedKmh.toFixed(1)}</Text>
                         <Text style={ct.statUnit}>km/h</Text>
                     </View>
                     <View style={ct.statBox}>
@@ -587,66 +483,54 @@ function CardioTracker({
                     </View>
                 </View>
 
-                {/* Pace */}
-                <View style={ct.paceRow}>
-                    <Text style={ct.paceLabel}>Pace</Text>
-                    <Text style={ct.paceValue}>{pace} /km</Text>
-                </View>
-
                 {/* Controls */}
                 <View style={ct.controls}>
                     {!hasStarted ? (
                         <TouchableOpacity style={ct.startBtn} onPress={handleStart}>
-                            <Play size={24} color="#fff" fill="#fff" />
+                            <Play size={20} color="#fff" fill="#fff" />
                             <Text style={ct.startBtnText}>Start</Text>
                         </TouchableOpacity>
                     ) : (
                         <View style={ct.activeControls}>
-                            {/* Pause / Resume */}
-                            <TouchableOpacity
-                                style={ct.pauseBtn}
-                                onPress={isPaused ? handleResume : handlePause}
-                            >
+                            <TouchableOpacity style={ct.pauseBtn} onPress={isPaused ? handleResume : handlePause}>
                                 {isPaused
-                                    ? <Play size={22} color="#22c55e" fill="#22c55e" />
-                                    : <Pause size={22} color="#fff" fill="#fff" />
+                                    ? <Play size={18} color="#22c55e" fill="#22c55e" />
+                                    : <Pause size={18} color="#fff" fill="#fff" />
                                 }
                                 <Text style={[ct.pauseBtnText, isPaused && { color: "#22c55e" }]}>
                                     {isPaused ? "Resume" : "Pause"}
                                 </Text>
                             </TouchableOpacity>
-
-                            {/* Finish */}
                             <TouchableOpacity style={ct.finishBtn} onPress={handleFinish}>
-                                <Square size={20} color="#fff" fill="#fff" />
+                                <Square size={17} color="#fff" fill="#fff" />
                                 <Text style={ct.finishBtnText}>Finish</Text>
                             </TouchableOpacity>
                         </View>
                     )}
                 </View>
 
-                {/* Bernard message */}
-                <View style={ct.bernardRow}>
-                    <Text style={ct.bernardEmoji}>🤖</Text>
-                    <Text style={ct.bernardText}>
-                        {!hasStarted
-                            ? "Tap Start when you're ready. Your route will be tracked live! 🗺️"
-                            : isPaused
-                                ? "Take a breather! Bernardo Carpio would approve. 💪"
-                                : distanceKm < 0.5
-                                    ? "Just getting started — keep that pace! 🏃"
-                                    : distanceKm < 1
-                                        ? `${distanceKm.toFixed(2)} km done! You're building momentum! 🔥`
+                {/* Bernard — one liner, no box on small screens */}
+                {!isSmallScreen && (
+                    <View style={ct.bernardRow}>
+                        <Text style={ct.bernardEmoji}>🤖</Text>
+                        <Text style={ct.bernardText} numberOfLines={2}>
+                            {!hasStarted
+                                ? "Tap Start when ready. Your route will be tracked live! 🗺️"
+                                : isPaused
+                                    ? "Take a breather! Bernardo Carpio would approve. 💪"
+                                    : distanceKm < 0.5
+                                        ? "Just getting started — keep that pace! 🏃"
                                         : `${distanceKm.toFixed(2)} km — Bernardo would be proud! 🏔️`
-                        }
-                    </Text>
-                </View>
+                            }
+                        </Text>
+                    </View>
+                )}
             </View>
         </View>
     );
 }
 
-// ─── Cardio Summary overlay ───────────────────
+// ─── Cardio Summary Card ──────────────────────
 function CardioSummaryCard({
     result,
     exerciseName,
@@ -669,28 +553,22 @@ function CardioSummaryCard({
                         <Text style={ct.cardioSummaryUnit}>km</Text>
                     </View>
                     <View style={ct.cardioSummaryStat}>
-                        <Text style={[ct.cardioSummaryVal, { color: "#3b82f6" }]}>
-                            {formatDuration(result.durationSeconds)}
-                        </Text>
+                        <Text style={[ct.cardioSummaryVal, { color: "#3b82f6" }]}>{formatDuration(result.durationSeconds)}</Text>
                         <Text style={ct.cardioSummaryUnit}>time</Text>
                     </View>
                     <View style={ct.cardioSummaryStat}>
-                        <Text style={[ct.cardioSummaryVal, { color: "#f97316" }]}>
-                            {result.caloriesBurned}
-                        </Text>
+                        <Text style={[ct.cardioSummaryVal, { color: "#f97316" }]}>{result.caloriesBurned}</Text>
                         <Text style={ct.cardioSummaryUnit}>kcal</Text>
                     </View>
                     <View style={ct.cardioSummaryStat}>
-                        <Text style={[ct.cardioSummaryVal, { color: "#a855f7" }]}>
-                            {result.averageSpeedKmh}
-                        </Text>
+                        <Text style={[ct.cardioSummaryVal, { color: "#a855f7" }]}>{result.averageSpeedKmh}</Text>
                         <Text style={ct.cardioSummaryUnit}>km/h avg</Text>
                     </View>
                 </View>
 
                 <TouchableOpacity style={ct.continueBtn} onPress={onContinue}>
                     <Text style={ct.continueBtnText}>Continue Workout</Text>
-                    <ChevronRight size={18} color="#fff" />
+                    <ChevronRight size={16} color="#fff" />
                 </TouchableOpacity>
             </View>
         </View>
@@ -699,16 +577,8 @@ function CardioSummaryCard({
 
 // ─── Summary Screen ───────────────────────────
 function SummaryScreen({
-    exercises,
-    completedCount,
-    skippedCount,
-    dayName,
-    focus,
-    loggedWorkoutIds,
-    totalCaloriesBurned,
-    totalActiveMinutes,
-    totalDistanceKm,
-    onClose,
+    exercises, completedCount, skippedCount, dayName, focus,
+    loggedWorkoutIds, totalCaloriesBurned, totalActiveMinutes, totalDistanceKm, onClose,
 }: {
     exercises: Exercise[];
     completedCount: number;
@@ -764,13 +634,10 @@ function SummaryScreen({
                         </View>
                     </View>
 
-                    {/* Distance badge if any cardio was done */}
                     {totalDistanceKm > 0 && (
                         <View style={ws.distanceBadge}>
-                            <Navigation size={16} color="#22c55e" />
-                            <Text style={ws.distanceBadgeText}>
-                                {totalDistanceKm.toFixed(2)} km tracked
-                            </Text>
+                            <Navigation size={14} color="#22c55e" />
+                            <Text style={ws.distanceBadgeText}>{totalDistanceKm.toFixed(2)} km tracked</Text>
                         </View>
                     )}
 
@@ -793,13 +660,13 @@ function SummaryScreen({
                                 const isDeleted = deletedIds.has(id);
                                 return (
                                     <View key={id} style={[ws.loggedItem, isDeleted && ws.loggedItemDeleted]}>
-                                        <CheckCircle size={14} color={isDeleted ? "#333" : "#22c55e"} />
+                                        <CheckCircle size={13} color={isDeleted ? "#333" : "#22c55e"} />
                                         <Text style={[ws.loggedItemName, isDeleted && { color: "#333", textDecorationLine: "line-through" }]}>
                                             {name}
                                         </Text>
                                         {!isDeleted && (
                                             <TouchableOpacity style={ws.deleteLogBtn} onPress={() => handleDeleteLog(id, name)}>
-                                                <X size={12} color="#ef4444" />
+                                                <X size={11} color="#ef4444" />
                                             </TouchableOpacity>
                                         )}
                                     </View>
@@ -823,11 +690,7 @@ function SummaryScreen({
 export default function WorkoutSession() {
     const router = useRouter();
     const params = useLocalSearchParams<{
-        exercises: string;
-        dayName: string;
-        focus: string;
-        dateStr: string;
-        userId: string;
+        exercises: string; dayName: string; focus: string; dateStr: string; userId: string;
     }>();
 
     const exercises: Exercise[] = JSON.parse(params.exercises ?? "[]");
@@ -851,36 +714,23 @@ export default function WorkoutSession() {
     const [totalCaloriesBurned, setTotalCaloriesBurned] = useState(0);
     const [totalActiveMinutes, setTotalActiveMinutes] = useState(0);
     const [totalDistanceKm, setTotalDistanceKm] = useState(0);
-
-    // Cardio tracker state
     const [showCardioTracker, setShowCardioTracker] = useState(false);
     const [pendingCardioResult, setPendingCardioResult] = useState<CardioResult | null>(null);
     const [showCardioSummary, setShowCardioSummary] = useState(false);
 
-    // Accumulated workout data (for exercises completed before final finish)
     const accumulatedRows = useRef<any[]>([]);
-
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const currentExercise = exercises[currentIndex];
     const totalSets = currentExercise?.sets > 0 ? currentExercise.sets : 1;
 
-    // Load user weight for calorie calcs
     useEffect(() => {
         if (!userId) return;
-        supabase
-            .from("profiles")
-            .select("weight_kg")
-            .eq("id", userId)
-            .single()
-            .then(({ data }) => {
-                if (data?.weight_kg) setUserWeightKg(Number(data.weight_kg));
-            });
+        supabase.from("profiles").select("weight_kg").eq("id", userId).single()
+            .then(({ data }) => { if (data?.weight_kg) setUserWeightKg(Number(data.weight_kg)); });
     }, [userId]);
 
     useEffect(() => {
         if (!currentExercise) return;
-
-        // If it's a cardio exercise, show the tracker instead of the normal view
         if (isCardioExercise(currentExercise.name)) {
             setShowCardioTracker(true);
             setBernardMsg(getBernardMessage("cardio"));
@@ -891,9 +741,7 @@ export default function WorkoutSession() {
     }, [currentIndex]);
 
     const loadExerciseData = async () => {
-        setLoadingGif(true);
-        setGifError(false);
-        setExerciseData(null);
+        setLoadingGif(true); setGifError(false); setExerciseData(null);
         const data = await fetchExerciseData(currentExercise.name);
         setExerciseData(data);
         setBernardMsg(getBernardMessage(data?.bodyPart ?? "default"));
@@ -907,31 +755,23 @@ export default function WorkoutSession() {
         });
     };
 
-    // ─── Cardio finished ─────────────────────
     const handleCardioFinish = (result: CardioResult) => {
         setPendingCardioResult(result);
         setShowCardioTracker(false);
         setShowCardioSummary(true);
         setCompletedExercises((prev) => new Set([...prev, currentIndex]));
-
-        // Accumulate the cardio row
         const durationMin = Math.round(result.durationSeconds / 60);
         accumulatedRows.current.push({
-            user_id: userId,
-            date: dateStr,
-            name: currentExercise.name,
-            type: "cardio",
+            user_id: userId, date: dateStr,
+            name: currentExercise.name, type: "cardio",
             duration_minutes: durationMin || 1,
             calories_burned: result.caloriesBurned,
-            distance_km: result.distanceKm,
-            completed: true,
+            distance_km: result.distanceKm, completed: true,
         });
     };
 
     const handleCardioSummaryContinue = () => {
-        setShowCardioSummary(false);
-        setPendingCardioResult(null);
-        moveToNext();
+        setShowCardioSummary(false); setPendingCardioResult(null); moveToNext();
     };
 
     const handleCardioSkip = () => {
@@ -940,21 +780,17 @@ export default function WorkoutSession() {
         animateTransition(() => moveToNext());
     };
 
-    // ─── Strength exercise controls ───────────
     const handleNextSet = () => {
         if (currentSet < totalSets) {
             setShowRest(true);
         } else {
             setCompletedExercises((prev) => new Set([...prev, currentIndex]));
-            // Accumulate strength row
             const durationMin = currentExercise.duration
                 ? parseInt(currentExercise.duration.replace(/[^0-9]/g, "")) || 30
                 : totalSets * 3;
             accumulatedRows.current.push({
-                user_id: userId,
-                date: dateStr,
-                name: currentExercise.name,
-                type: inferType(currentExercise.name),
+                user_id: userId, date: dateStr,
+                name: currentExercise.name, type: inferType(currentExercise.name),
                 duration_minutes: durationMin,
                 calories_burned: calculateCaloriesBurned(currentExercise.name, durationMin, userWeightKg),
                 completed: true,
@@ -963,48 +799,28 @@ export default function WorkoutSession() {
         }
     };
 
-    const handleAfterRest = () => {
-        setShowRest(false);
-        setCurrentSet((prev) => prev + 1);
-    };
+    const handleAfterRest = () => { setShowRest(false); setCurrentSet((prev) => prev + 1); };
 
     const handleSkip = () => {
         Alert.alert("Skip Exercise?", `Skip ${currentExercise?.name}?`, [
             { text: "Cancel", style: "cancel" },
-            {
-                text: "Skip", onPress: () => {
-                    setSkippedExercises((prev) => new Set([...prev, currentIndex]));
-                    animateTransition(() => moveToNext());
-                },
-            },
+            { text: "Skip", onPress: () => { setSkippedExercises((prev) => new Set([...prev, currentIndex])); animateTransition(() => moveToNext()); } },
         ]);
     };
 
     const moveToNext = () => {
-        if (currentIndex + 1 >= exercises.length) {
-            finishWorkout();
-        } else {
-            animateTransition(() => {
-                setCurrentIndex((prev) => prev + 1);
-                setCurrentSet(1);
-                setShowRest(false);
-            });
-        }
+        if (currentIndex + 1 >= exercises.length) { finishWorkout(); }
+        else { animateTransition(() => { setCurrentIndex((prev) => prev + 1); setCurrentSet(1); setShowRest(false); }); }
     };
 
     const finishWorkout = async () => {
         const ids: string[] = [];
-        let totalCal = 0;
-        let totalMin = 0;
-        let totalDist = 0;
-
+        let totalCal = 0, totalMin = 0, totalDist = 0;
         try {
             if (accumulatedRows.current.length > 0 && userId) {
-                const { data, error } = await supabase
-                    .from("workouts")
+                const { data, error } = await supabase.from("workouts")
                     .insert(accumulatedRows.current)
                     .select("id, name, calories_burned, duration_minutes, distance_km");
-
                 if (!error && data) {
                     data.forEach((w) => {
                         ids.push(`${w.id}||${w.name}`);
@@ -1013,28 +829,19 @@ export default function WorkoutSession() {
                         totalDist += Number(w.distance_km) || 0;
                     });
                 }
-
-                // Update daily_stats
                 if (totalCal > 0 || totalMin > 0) {
-                    const { data: existing } = await supabase
-                        .from("daily_stats")
+                    const { data: existing } = await supabase.from("daily_stats")
                         .select("calories_burned, active_minutes, distance_km")
-                        .eq("user_id", userId)
-                        .eq("date", dateStr)
-                        .single();
-
+                        .eq("user_id", userId).eq("date", dateStr).single();
                     await supabase.from("daily_stats").upsert({
-                        user_id: userId,
-                        date: dateStr,
+                        user_id: userId, date: dateStr,
                         calories_burned: (Number(existing?.calories_burned) || 0) + totalCal,
                         active_minutes: (Number(existing?.active_minutes) || 0) + totalMin,
                         distance_km: (Number(existing?.distance_km) || 0) + totalDist,
                     }, { onConflict: "user_id,date" });
                 }
             }
-        } catch (err) {
-            console.warn("Auto-log failed:", err);
-        }
+        } catch (err) { console.warn("Auto-log failed:", err); }
 
         setLoggedWorkoutIds(ids);
         setTotalCaloriesBurned(Math.round(totalCal));
@@ -1050,25 +857,43 @@ export default function WorkoutSession() {
         ]);
     };
 
-    // ─── Render: Summary ─────────────────────
+    // Shared compact header used in both normal + cardio views
+    const SessionHeader = ({ showSkip = true }: { showSkip?: boolean }) => (
+        <>
+            <View style={ws.header}>
+                <TouchableOpacity style={ws.quitBtn} onPress={handleQuit}>
+                    <X size={18} color="#888" />
+                </TouchableOpacity>
+                <View style={{ flex: 1, alignItems: "center" }}>
+                    <Text style={ws.headerFocus}>{focus}</Text>
+                    <Text style={ws.headerDay}>{dayName}</Text>
+                </View>
+                {showSkip
+                    ? <TouchableOpacity style={ws.skipBtn} onPress={handleSkip}><SkipForward size={16} color="#888" /></TouchableOpacity>
+                    : <View style={{ width: 32 }} />
+                }
+            </View>
+            <View style={ws.progressBarTrack}>
+                <View style={[ws.progressBarFill, { width: `${(currentIndex / exercises.length) * 100}%` }]} />
+            </View>
+            <Text style={ws.progressLabel}>
+                {currentIndex + 1} / {exercises.length}{showSkip ? "" : "  ·  Cardio 🏃"}
+            </Text>
+        </>
+    );
+
     if (showSummary) {
         return (
             <SummaryScreen
-                exercises={exercises}
-                completedCount={completedExercises.size}
-                skippedCount={skippedExercises.size}
-                dayName={dayName}
-                focus={focus}
-                loggedWorkoutIds={loggedWorkoutIds}
-                totalCaloriesBurned={totalCaloriesBurned}
-                totalActiveMinutes={totalActiveMinutes}
-                totalDistanceKm={totalDistanceKm}
+                exercises={exercises} completedCount={completedExercises.size}
+                skippedCount={skippedExercises.size} dayName={dayName} focus={focus}
+                loggedWorkoutIds={loggedWorkoutIds} totalCaloriesBurned={totalCaloriesBurned}
+                totalActiveMinutes={totalActiveMinutes} totalDistanceKm={totalDistanceKm}
                 onClose={() => router.back()}
             />
         );
     }
 
-    // ─── Render: Cardio Summary ───────────────
     if (showCardioSummary && pendingCardioResult) {
         return (
             <CardioSummaryCard
@@ -1079,45 +904,21 @@ export default function WorkoutSession() {
         );
     }
 
-    // ─── Render: No exercises ─────────────────
     if (!currentExercise) {
         return (
             <View style={[ws.container, { justifyContent: "center", alignItems: "center" }]}>
                 <Text style={{ color: "#fff", marginBottom: 16 }}>No exercises found.</Text>
-                <TouchableOpacity onPress={() => router.back()}>
-                    <Text style={{ color: "#22c55e" }}>Go Back</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.back()}><Text style={{ color: "#22c55e" }}>Go Back</Text></TouchableOpacity>
             </View>
         );
     }
 
-    // ─── Render: Cardio Tracker ───────────────
+    // ─── Cardio Tracker ───────────────────────
     if (showCardioTracker) {
         return (
             <View style={ws.container}>
                 <StatusBar style="light" />
-
-                {/* Mini header */}
-                <View style={ws.header}>
-                    <TouchableOpacity style={ws.quitBtn} onPress={handleQuit}>
-                        <X size={20} color="#888" />
-                    </TouchableOpacity>
-                    <View style={{ flex: 1, alignItems: "center" }}>
-                        <Text style={ws.headerFocus}>{focus}</Text>
-                        <Text style={ws.headerDay}>{dayName}</Text>
-                    </View>
-                    {/* empty spacer */}
-                    <View style={{ width: 36 }} />
-                </View>
-
-                {/* Progress bar */}
-                <View style={ws.progressBarTrack}>
-                    <View style={[ws.progressBarFill, { width: `${(currentIndex / exercises.length) * 100}%` }]} />
-                </View>
-                <Text style={ws.progressLabel}>
-                    Exercise {currentIndex + 1} of {exercises.length} • Cardio 🏃
-                </Text>
-
+                <SessionHeader showSkip={false} />
                 <CardioTracker
                     exercise={currentExercise}
                     weightKg={userWeightKg}
@@ -1128,30 +929,11 @@ export default function WorkoutSession() {
         );
     }
 
-    // ─── Render: Normal Exercise ──────────────
-    const progressPercent = (currentIndex / exercises.length) * 100;
-
+    // ─── Normal Exercise ──────────────────────
     return (
         <View style={ws.container}>
             <StatusBar style="light" />
-
-            <View style={ws.header}>
-                <TouchableOpacity style={ws.quitBtn} onPress={handleQuit}>
-                    <X size={20} color="#888" />
-                </TouchableOpacity>
-                <View style={{ flex: 1, alignItems: "center" }}>
-                    <Text style={ws.headerFocus}>{focus}</Text>
-                    <Text style={ws.headerDay}>{dayName}</Text>
-                </View>
-                <TouchableOpacity style={ws.skipBtn} onPress={handleSkip}>
-                    <SkipForward size={18} color="#888" />
-                </TouchableOpacity>
-            </View>
-
-            <View style={ws.progressBarTrack}>
-                <View style={[ws.progressBarFill, { width: `${progressPercent}%` }]} />
-            </View>
-            <Text style={ws.progressLabel}>Exercise {currentIndex + 1} of {exercises.length}</Text>
+            <SessionHeader showSkip />
 
             <ScrollView contentContainerStyle={ws.scrollContent} showsVerticalScrollIndicator={false}>
                 <Animated.View style={{ opacity: fadeAnim }}>
@@ -1166,10 +948,7 @@ export default function WorkoutSession() {
                             <Image
                                 source={{
                                     uri: exerciseData.gifUrl,
-                                    headers: {
-                                        "X-RapidAPI-Key": RAPIDAPI_KEY ?? "",
-                                        "X-RapidAPI-Host": "exercisedb.p.rapidapi.com",
-                                    },
+                                    headers: { "X-RapidAPI-Key": RAPIDAPI_KEY ?? "", "X-RapidAPI-Host": "exercisedb.p.rapidapi.com" },
                                 }}
                                 style={ws.gifImage}
                                 resizeMode="contain"
@@ -1244,25 +1023,16 @@ export default function WorkoutSession() {
                     {!showRest && (
                         <TouchableOpacity style={ws.nextBtn} onPress={handleNextSet}>
                             {currentSet < totalSets ? (
-                                <>
-                                    <Text style={ws.nextBtnText}>Done — Next Set</Text>
-                                    <ChevronRight size={20} color="#fff" />
-                                </>
+                                <><Text style={ws.nextBtnText}>Done — Next Set</Text><ChevronRight size={18} color="#fff" /></>
                             ) : currentIndex + 1 >= exercises.length ? (
-                                <>
-                                    <CheckCircle size={20} color="#fff" />
-                                    <Text style={ws.nextBtnText}>Finish Workout 🏆</Text>
-                                </>
+                                <><CheckCircle size={18} color="#fff" /><Text style={ws.nextBtnText}>Finish Workout 🏆</Text></>
                             ) : (
-                                <>
-                                    <Text style={ws.nextBtnText}>Next Exercise</Text>
-                                    <ChevronRight size={20} color="#fff" />
-                                </>
+                                <><Text style={ws.nextBtnText}>Next Exercise</Text><ChevronRight size={18} color="#fff" /></>
                             )}
                         </TouchableOpacity>
                     )}
 
-                    {/* Dots */}
+                    {/* Nav dots */}
                     <View style={ws.dotsRow}>
                         {exercises.map((_, i) => (
                             <View key={i} style={[
@@ -1280,230 +1050,316 @@ export default function WorkoutSession() {
     );
 }
 
-// ─── Cardio Tracker Styles ─────────────────────
+// ─── Cardio Tracker Styles ────────────────────
 const ct = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#0a0a0a" },
+    container: { flex: 1 },
 
     // Permission
-    permissionBox: {
-        flex: 1, alignItems: "center", justifyContent: "center",
-        padding: 32, backgroundColor: "#0a0a0a",
-    },
-    permissionEmoji: { fontSize: 56, marginBottom: 16 },
-    permissionTitle: { color: "#fff", fontSize: 20, fontWeight: "700", marginBottom: 10, textAlign: "center" },
-    permissionSub: { color: "#888", fontSize: 14, lineHeight: 22, textAlign: "center", marginBottom: 24 },
-    skipCardioBtn: {
-        borderWidth: 1, borderColor: "#333", borderRadius: 12,
-        paddingVertical: 12, paddingHorizontal: 24,
-    },
-    skipCardioBtnText: { color: "#888", fontSize: 14, fontWeight: "600" },
+    permissionBox: { flex: 1, alignItems: "center", justifyContent: "center", padding: 28, backgroundColor: "#0a0a0a" },
+    permissionEmoji: { fontSize: 44, marginBottom: 12 },
+    permissionTitle: { color: "#fff", fontSize: 18, fontWeight: "700", marginBottom: 8, textAlign: "center" },
+    permissionSub: { color: "#888", fontSize: 13, lineHeight: 20, textAlign: "center", marginBottom: 20 },
+    skipCardioBtn: { borderWidth: 1, borderColor: "#333", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
+    skipCardioBtnText: { color: "#888", fontSize: 13, fontWeight: "600" },
 
     // Map
-    mapWrapper: { flex: 1, position: "relative" },
+    mapWrapper: { position: "relative", width: "100%" },
     map: { width: "100%", height: "100%" },
     mapTopOverlay: {
-        position: "absolute", top: 12, left: 12, right: 12,
-        flexDirection: "row", alignItems: "center", gap: 10,
+        position: "absolute", top: 10, left: 12, right: 12,
+        flexDirection: "row", alignItems: "center", gap: 8,
     },
     exerciseNameBadge: {
-        flex: 1, backgroundColor: "rgba(0,0,0,0.72)", borderRadius: 10,
-        paddingHorizontal: 14, paddingVertical: 8,
+        flex: 1, backgroundColor: "rgba(0,0,0,0.72)", borderRadius: 9,
+        paddingHorizontal: 12, paddingVertical: 7,
         borderWidth: 1, borderColor: "rgba(34,197,94,0.3)",
     },
-    exerciseNameBadgeText: { color: "#fff", fontSize: 13, fontWeight: "700" },
+    exerciseNameBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
     skipOverlayBtn: {
-        width: 36, height: 36, borderRadius: 10,
+        width: 33, height: 33, borderRadius: 9,
         backgroundColor: "rgba(0,0,0,0.72)",
         alignItems: "center", justifyContent: "center",
         borderWidth: 1, borderColor: "#333",
     },
     trackingPill: {
-        position: "absolute", top: 56, alignSelf: "center",
-        flexDirection: "row", alignItems: "center", gap: 6,
-        backgroundColor: "rgba(34,197,94,0.9)", borderRadius: 20,
-        paddingHorizontal: 14, paddingVertical: 6,
+        position: "absolute", top: 50, alignSelf: "center",
+        flexDirection: "row", alignItems: "center", gap: 5,
+        backgroundColor: "rgba(34,197,94,0.9)", borderRadius: 18,
+        paddingHorizontal: 12, paddingVertical: 5,
     },
     trackingPillPaused: { backgroundColor: "rgba(249,115,22,0.9)" },
-    trackingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },
-    trackingDotPaused: { backgroundColor: "#fff" },
-    trackingText: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
-    trackingTextPaused: { color: "#fff" },
+    trackingDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#fff" },
+    trackingDotPaused: {},
+    trackingText: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
+    trackingTextPaused: {},
     startMarker: {
-        width: 26, height: 26, borderRadius: 13,
+        width: 22, height: 22, borderRadius: 11,
         backgroundColor: "#22c55e", alignItems: "center", justifyContent: "center",
         borderWidth: 2, borderColor: "#fff",
     },
-    startMarkerText: { color: "#fff", fontSize: 12, fontWeight: "800" },
+    startMarkerText: { color: "#fff", fontSize: 10, fontWeight: "800" },
 
-    // Stats panel
+    // Stats panel — tighter padding on small screens
     statsPanel: {
-        backgroundColor: "#111", borderTopLeftRadius: 24, borderTopRightRadius: 24,
-        padding: 20, paddingBottom: 12,
+        backgroundColor: "#111",
+        borderTopLeftRadius: 20, borderTopRightRadius: 20,
+        paddingHorizontal: 14,
+        paddingTop: 14,
+        paddingBottom: isSmallScreen ? 6 : 10,
         borderTopWidth: 1, borderTopColor: "#2a2a2a",
+        flex: 1,
     },
-    timerRow: { alignItems: "center", marginBottom: 16 },
-    timerValue: { color: "#fff", fontSize: 44, fontWeight: "800", fontVariant: ["tabular-nums"] },
-    timerLabel: { color: "#555", fontSize: 12, marginTop: 2 },
-    statsGrid: { flexDirection: "row", gap: 8, marginBottom: 12 },
+
+    // Compact top row: timer + pace side by side
+    topRow: {
+        flexDirection: "row", alignItems: "center",
+        marginBottom: isSmallScreen ? 10 : 14,
+    },
+    timerBlock: { flex: 1, alignItems: "center" },
+    paceBlock: { flex: 1, alignItems: "center" },
+    divider: { width: 1, height: 36, backgroundColor: "#2a2a2a" },
+    timerValue: {
+        color: "#fff",
+        fontSize: isSmallScreen ? 32 : 38,
+        fontWeight: "800",
+        fontVariant: ["tabular-nums"],
+    },
+    timerLabel: { color: "#555", fontSize: 10, marginTop: 1 },
+    paceValue: {
+        color: "#a855f7",
+        fontSize: isSmallScreen ? 22 : 26,
+        fontWeight: "700",
+        fontVariant: ["tabular-nums"],
+    },
+
+    // 3-stat grid
+    statsGrid: {
+        flexDirection: "row", gap: 7,
+        marginBottom: isSmallScreen ? 10 : 13,
+    },
     statBox: {
-        flex: 1, backgroundColor: "#1a1a1a", borderRadius: 14, padding: 12,
-        alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
+        flex: 1,
+        backgroundColor: "#1a1a1a",
+        borderRadius: 12,
+        paddingVertical: isSmallScreen ? 8 : 11,
+        alignItems: "center",
+        borderWidth: 1, borderColor: "#2a2a2a",
     },
     statBoxCenter: {
-        borderColor: "rgba(59,130,246,0.2)", backgroundColor: "rgba(59,130,246,0.05)",
+        borderColor: "rgba(59,130,246,0.2)",
+        backgroundColor: "rgba(59,130,246,0.05)",
     },
-    statVal: { color: "#22c55e", fontSize: 22, fontWeight: "800", fontVariant: ["tabular-nums"] },
-    statUnit: { color: "#555", fontSize: 11, marginTop: 2 },
-    paceRow: {
-        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-        backgroundColor: "#1a1a1a", borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10,
-        marginBottom: 14, borderWidth: 1, borderColor: "#2a2a2a",
+    statVal: {
+        color: "#22c55e",
+        fontSize: isSmallScreen ? 18 : 21,
+        fontWeight: "800",
+        fontVariant: ["tabular-nums"],
     },
-    paceLabel: { color: "#888", fontSize: 13 },
-    paceValue: { color: "#fff", fontSize: 16, fontWeight: "700", fontVariant: ["tabular-nums"] },
+    statUnit: { color: "#555", fontSize: 10, marginTop: 2 },
 
     // Controls
-    controls: { marginBottom: 14 },
+    controls: { marginBottom: isSmallScreen ? 8 : 12 },
     startBtn: {
-        backgroundColor: "#22c55e", borderRadius: 16, paddingVertical: 16,
-        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-        shadowColor: "#22c55e", shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
-    },
-    startBtnText: { color: "#fff", fontSize: 18, fontWeight: "800" },
-    activeControls: { flexDirection: "row", gap: 10 },
-    pauseBtn: {
-        flex: 1, backgroundColor: "#1a1a1a", borderRadius: 14, paddingVertical: 14,
+        backgroundColor: "#22c55e", borderRadius: 14,
+        paddingVertical: isSmallScreen ? 13 : 15,
         flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    },
+    startBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
+    activeControls: { flexDirection: "row", gap: 8 },
+    pauseBtn: {
+        flex: 1, backgroundColor: "#1a1a1a", borderRadius: 12,
+        paddingVertical: isSmallScreen ? 11 : 13,
+        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
         borderWidth: 1, borderColor: "#2a2a2a",
     },
-    pauseBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+    pauseBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
     finishBtn: {
-        flex: 1, backgroundColor: "#ef4444", borderRadius: 14, paddingVertical: 14,
-        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+        flex: 1, backgroundColor: "#ef4444", borderRadius: 12,
+        paddingVertical: isSmallScreen ? 11 : 13,
+        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
     },
-    finishBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+    finishBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
 
-    // Bernard
+    // Bernard (hidden on small screens)
     bernardRow: {
-        flexDirection: "row", alignItems: "flex-start", gap: 8,
-        backgroundColor: "rgba(34,197,94,0.05)", borderRadius: 12, padding: 12,
+        flexDirection: "row", alignItems: "flex-start", gap: 7,
+        backgroundColor: "rgba(34,197,94,0.05)", borderRadius: 10, padding: 10,
         borderWidth: 1, borderColor: "rgba(34,197,94,0.1)",
     },
-    bernardEmoji: { fontSize: 18, flexShrink: 0 },
-    bernardText: { color: "#22c55e", fontSize: 12, lineHeight: 18, flex: 1, fontStyle: "italic" },
+    bernardEmoji: { fontSize: 15, flexShrink: 0 },
+    bernardText: { color: "#22c55e", fontSize: 11, lineHeight: 16, flex: 1, fontStyle: "italic" },
 
-    // Cardio Summary overlay
-    cardioSummaryOverlay: {
-        flex: 1, backgroundColor: "#0a0a0a",
-        justifyContent: "center", alignItems: "center", padding: 24,
-    },
+    // Cardio summary
+    cardioSummaryOverlay: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center", padding: 20 },
     cardioSummaryCard: {
-        backgroundColor: "#111", borderRadius: 24, padding: 28,
-        width: "100%", alignItems: "center",
-        borderWidth: 1, borderColor: "#2a2a2a",
+        backgroundColor: "#111", borderRadius: 22, padding: 22,
+        width: "100%", alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
     },
-    cardioSummaryEmoji: { fontSize: 56, marginBottom: 12 },
-    cardioSummaryTitle: { color: "#fff", fontSize: 22, fontWeight: "800", marginBottom: 4 },
-    cardioSummaryExName: { color: "#555", fontSize: 13, marginBottom: 20, textTransform: "capitalize" },
-    cardioSummaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 24, width: "100%" },
+    cardioSummaryEmoji: { fontSize: 44, marginBottom: 10 },
+    cardioSummaryTitle: { color: "#fff", fontSize: 20, fontWeight: "800", marginBottom: 3 },
+    cardioSummaryExName: { color: "#555", fontSize: 12, marginBottom: 16, textTransform: "capitalize" },
+    cardioSummaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 20, width: "100%" },
     cardioSummaryStat: {
-        width: "47%", backgroundColor: "#1a1a1a", borderRadius: 14,
-        padding: 14, alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
+        width: "47%", backgroundColor: "#1a1a1a", borderRadius: 12,
+        padding: 12, alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
     },
-    cardioSummaryVal: { color: "#22c55e", fontSize: 24, fontWeight: "800" },
-    cardioSummaryUnit: { color: "#555", fontSize: 11, marginTop: 4 },
+    cardioSummaryVal: { color: "#22c55e", fontSize: 22, fontWeight: "800" },
+    cardioSummaryUnit: { color: "#555", fontSize: 10, marginTop: 3 },
     continueBtn: {
-        backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: 14,
-        width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+        backgroundColor: "#22c55e", borderRadius: 12, paddingVertical: 13,
+        width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
     },
-    continueBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+    continueBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
 });
 
 // ─── Workout Session Styles ───────────────────
 const ws = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#0a0a0a" },
+
+    // Compact header
     header: {
         flexDirection: "row", alignItems: "center",
-        paddingHorizontal: 16, paddingTop: 52, paddingBottom: 12,
+        paddingHorizontal: 14,
+        paddingTop: isSmallScreen ? 44 : 50,
+        paddingBottom: 10,
         backgroundColor: "#111",
     },
-    quitBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
-    skipBtn: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
-    headerFocus: { color: "#fff", fontSize: 15, fontWeight: "700" },
-    headerDay: { color: "#555", fontSize: 12, marginTop: 2 },
-    progressBarTrack: { height: 4, backgroundColor: "#1a1a1a", width: "100%" },
-    progressBarFill: { height: 4, backgroundColor: "#22c55e", borderRadius: 2 },
-    progressLabel: { color: "#555", fontSize: 12, textAlign: "center", paddingVertical: 8 },
-    scrollContent: { padding: 16, paddingBottom: 60 },
+    quitBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
+    skipBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
+    headerFocus: { color: "#fff", fontSize: 14, fontWeight: "700" },
+    headerDay: { color: "#555", fontSize: 11, marginTop: 1 },
+
+    progressBarTrack: { height: 3, backgroundColor: "#1a1a1a", width: "100%" },
+    progressBarFill: { height: 3, backgroundColor: "#22c55e", borderRadius: 2 },
+    progressLabel: { color: "#444", fontSize: 11, textAlign: "center", paddingVertical: 6 },
+
+    // Scroll body — tighter on small screens
+    scrollContent: { padding: isSmallScreen ? 12 : 16, paddingBottom: 50 },
+
+    // GIF container — shorter on small screens
     gifContainer: {
-        width: "100%", height: 280, backgroundColor: "#111", borderRadius: 20,
-        overflow: "hidden", marginBottom: 20, alignItems: "center", justifyContent: "center",
+        width: "100%",
+        height: isSmallScreen ? 200 : 260,
+        backgroundColor: "#111", borderRadius: 18,
+        overflow: "hidden", marginBottom: 14,
+        alignItems: "center", justifyContent: "center",
         borderWidth: 1, borderColor: "#2a2a2a",
     },
     gifImage: { width: "100%", height: "100%" },
     gifPlaceholder: { alignItems: "center", justifyContent: "center", flex: 1 },
-    gifLoadingText: { color: "#444", fontSize: 14 },
-    fallbackBox: { alignItems: "center", justifyContent: "center", flex: 1, width: "100%", borderWidth: 1, borderRadius: 20, gap: 8 },
-    fallbackEmoji: { fontSize: 72 },
-    fallbackBodyPart: { fontSize: 18, fontWeight: "700" },
-    fallbackSub: { color: "#444", fontSize: 12 },
-    infoBox: { marginBottom: 16 },
-    exerciseName: { color: "#fff", fontSize: 22, fontWeight: "800", marginBottom: 10, textTransform: "capitalize" },
-    muscleRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-    musclePill: { backgroundColor: "rgba(34,197,94,0.12)", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: "rgba(34,197,94,0.25)" },
-    musclePillText: { color: "#22c55e", fontSize: 12, fontWeight: "600", textTransform: "capitalize" },
-    setsBox: { backgroundColor: "#111", borderRadius: 16, padding: 16, alignItems: "center", marginBottom: 16, borderWidth: 1, borderColor: "#2a2a2a" },
-    setsRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-    setDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: "#2a2a2a", borderWidth: 1, borderColor: "#333" },
+    gifLoadingText: { color: "#444", fontSize: 13 },
+    fallbackBox: { alignItems: "center", justifyContent: "center", flex: 1, width: "100%", borderWidth: 1, borderRadius: 18, gap: 6 },
+    fallbackEmoji: { fontSize: isSmallScreen ? 52 : 64 },
+    fallbackBodyPart: { fontSize: 16, fontWeight: "700" },
+    fallbackSub: { color: "#444", fontSize: 11 },
+
+    infoBox: { marginBottom: 12 },
+    exerciseName: { color: "#fff", fontSize: isSmallScreen ? 18 : 20, fontWeight: "800", marginBottom: 8, textTransform: "capitalize" },
+    muscleRow: { flexDirection: "row", gap: 7, flexWrap: "wrap" },
+    musclePill: {
+        backgroundColor: "rgba(34,197,94,0.12)", borderRadius: 16,
+        paddingHorizontal: 10, paddingVertical: 4,
+        borderWidth: 1, borderColor: "rgba(34,197,94,0.25)",
+    },
+    musclePillText: { color: "#22c55e", fontSize: 11, fontWeight: "600", textTransform: "capitalize" },
+
+    setsBox: {
+        backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 12 : 15,
+        alignItems: "center", marginBottom: 12,
+        borderWidth: 1, borderColor: "#2a2a2a",
+    },
+    setsRow: { flexDirection: "row", gap: 7, marginBottom: 10 },
+    setDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#2a2a2a", borderWidth: 1, borderColor: "#333" },
     setDotDone: { backgroundColor: "#22c55e", borderColor: "#22c55e" },
-    setDotActive: { backgroundColor: "rgba(34,197,94,0.3)", borderColor: "#22c55e", width: 16, height: 16, borderRadius: 8 },
-    setLabel: { color: "#fff", fontSize: 16, fontWeight: "700", marginBottom: 6 },
-    repsLabel: { color: "#22c55e", fontSize: 28, fontWeight: "800" },
-    restTimerBox: { backgroundColor: "#111", borderRadius: 16, padding: 24, alignItems: "center", marginBottom: 16, borderWidth: 1, borderColor: "rgba(59,130,246,0.2)" },
-    restTimerTitle: { color: "#888", fontSize: 14, marginBottom: 8 },
-    restTimerCount: { color: "#3b82f6", fontSize: 56, fontWeight: "800", marginBottom: 16 },
-    restTimerTrack: { width: "100%", height: 6, backgroundColor: "#1a1a1a", borderRadius: 3, overflow: "hidden", marginBottom: 16 },
-    restTimerFill: { height: 6, backgroundColor: "#3b82f6", borderRadius: 3 },
-    skipRestBtn: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: "#1a1a1a", borderRadius: 10, borderWidth: 1, borderColor: "#333" },
-    skipRestBtnText: { color: "#888", fontSize: 13, fontWeight: "600" },
-    instructionsBox: { backgroundColor: "#111", borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: "#2a2a2a" },
-    instructionsTitle: { color: "#fff", fontSize: 14, fontWeight: "700", marginBottom: 12 },
-    instructionRow: { flexDirection: "row", gap: 10, marginBottom: 10, alignItems: "flex-start" },
-    instructionNum: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#2a2a2a", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 },
-    instructionNumText: { color: "#888", fontSize: 11, fontWeight: "700" },
-    instructionText: { color: "#aaa", fontSize: 13, lineHeight: 20, flex: 1 },
-    bernardBox: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: "rgba(34,197,94,0.12)" },
-    bernardEmoji: { fontSize: 24, flexShrink: 0 },
-    bernardText: { color: "#22c55e", fontSize: 13, lineHeight: 20, flex: 1, fontStyle: "italic" },
-    nextBtn: { backgroundColor: "#22c55e", borderRadius: 16, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 20, shadowColor: "#22c55e", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
-    nextBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-    dotsRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginBottom: 20 },
-    navDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#2a2a2a" },
-    navDotActive: { backgroundColor: "#22c55e", width: 20, borderRadius: 4 },
+    setDotActive: { backgroundColor: "rgba(34,197,94,0.3)", borderColor: "#22c55e", width: 14, height: 14, borderRadius: 7 },
+    setLabel: { color: "#fff", fontSize: 14, fontWeight: "700", marginBottom: 5 },
+    repsLabel: { color: "#22c55e", fontSize: isSmallScreen ? 24 : 28, fontWeight: "800" },
+
+    restTimerBox: {
+        backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 16 : 22,
+        alignItems: "center", marginBottom: 12,
+        borderWidth: 1, borderColor: "rgba(59,130,246,0.2)",
+    },
+    restTimerTitle: { color: "#888", fontSize: 13, marginBottom: 6 },
+    restTimerCount: { color: "#3b82f6", fontSize: isSmallScreen ? 40 : 52, fontWeight: "800", marginBottom: 14 },
+    restTimerTrack: { width: "100%", height: 5, backgroundColor: "#1a1a1a", borderRadius: 3, overflow: "hidden", marginBottom: 14 },
+    restTimerFill: { height: 5, backgroundColor: "#3b82f6", borderRadius: 3 },
+    skipRestBtn: { paddingHorizontal: 18, paddingVertical: 8, backgroundColor: "#1a1a1a", borderRadius: 9, borderWidth: 1, borderColor: "#333" },
+    skipRestBtnText: { color: "#888", fontSize: 12, fontWeight: "600" },
+
+    instructionsBox: {
+        backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 12 : 15,
+        marginBottom: 12, borderWidth: 1, borderColor: "#2a2a2a",
+    },
+    instructionsTitle: { color: "#fff", fontSize: 13, fontWeight: "700", marginBottom: 10 },
+    instructionRow: { flexDirection: "row", gap: 9, marginBottom: 8, alignItems: "flex-start" },
+    instructionNum: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#2a2a2a", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 },
+    instructionNumText: { color: "#888", fontSize: 10, fontWeight: "700" },
+    instructionText: { color: "#aaa", fontSize: 12, lineHeight: 18, flex: 1 },
+
+    bernardBox: {
+        flexDirection: "row", alignItems: "flex-start", gap: 9,
+        backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 12, padding: 12,
+        marginBottom: 16, borderWidth: 1, borderColor: "rgba(34,197,94,0.12)",
+    },
+    bernardEmoji: { fontSize: 20, flexShrink: 0 },
+    bernardText: { color: "#22c55e", fontSize: 12, lineHeight: 18, flex: 1, fontStyle: "italic" },
+
+    nextBtn: {
+        backgroundColor: "#22c55e", borderRadius: 14,
+        paddingVertical: isSmallScreen ? 13 : 15,
+        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+        marginBottom: 16,
+    },
+    nextBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+
+    dotsRow: { flexDirection: "row", justifyContent: "center", gap: 5, marginBottom: 16 },
+    navDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#2a2a2a" },
+    navDotActive: { backgroundColor: "#22c55e", width: 18, borderRadius: 4 },
     navDotDone: { backgroundColor: "#22c55e" },
     navDotSkipped: { backgroundColor: "#f97316" },
+
+    // Summary
     summaryContainer: { flex: 1, backgroundColor: "#0a0a0a" },
-    summaryScroll: { flexGrow: 1, justifyContent: "center", padding: 24 },
-    summaryCard: { backgroundColor: "#111", borderRadius: 24, padding: 28, width: "100%", alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a" },
-    summaryEmoji: { fontSize: 64, marginBottom: 12 },
-    summaryTitle: { color: "#fff", fontSize: 24, fontWeight: "800", marginBottom: 4 },
-    summarySub: { color: "#555", fontSize: 14, marginBottom: 24 },
-    summaryStats: { flexDirection: "row", gap: 20, marginBottom: 20 },
+    summaryScroll: { flexGrow: 1, justifyContent: "center", padding: 20 },
+    summaryCard: {
+        backgroundColor: "#111", borderRadius: 22, padding: isSmallScreen ? 20 : 26,
+        width: "100%", alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
+    },
+    summaryEmoji: { fontSize: isSmallScreen ? 48 : 58, marginBottom: 10 },
+    summaryTitle: { color: "#fff", fontSize: isSmallScreen ? 20 : 23, fontWeight: "800", marginBottom: 3 },
+    summarySub: { color: "#555", fontSize: 12, marginBottom: 20 },
+    summaryStats: { flexDirection: "row", gap: 16, marginBottom: 16 },
     summaryStat: { alignItems: "center" },
-    summaryStatVal: { color: "#22c55e", fontSize: 28, fontWeight: "800" },
-    summaryStatLabel: { color: "#555", fontSize: 12, marginTop: 2 },
-    distanceBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(34,197,94,0.08)", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 16, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" },
-    distanceBadgeText: { color: "#22c55e", fontSize: 13, fontWeight: "600" },
-    summaryMsgBox: { backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: "rgba(34,197,94,0.15)", width: "100%" },
-    summaryMsg: { color: "#22c55e", fontSize: 14, lineHeight: 22, textAlign: "center", fontStyle: "italic" },
-    loggedListBox: { width: "100%", backgroundColor: "#151515", borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: "#2a2a2a" },
-    loggedListTitle: { color: "#fff", fontSize: 13, fontWeight: "700", marginBottom: 4 },
-    loggedListSub: { color: "#555", fontSize: 11, marginBottom: 12 },
-    loggedItem: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#1a1a1a" },
+    summaryStatVal: { color: "#22c55e", fontSize: isSmallScreen ? 22 : 26, fontWeight: "800" },
+    summaryStatLabel: { color: "#555", fontSize: 11, marginTop: 2 },
+    distanceBadge: {
+        flexDirection: "row", alignItems: "center", gap: 5,
+        backgroundColor: "rgba(34,197,94,0.08)", borderRadius: 9,
+        paddingHorizontal: 12, paddingVertical: 7, marginBottom: 14,
+        borderWidth: 1, borderColor: "rgba(34,197,94,0.2)",
+    },
+    distanceBadgeText: { color: "#22c55e", fontSize: 12, fontWeight: "600" },
+    summaryMsgBox: {
+        backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 12, padding: 12,
+        marginBottom: 14, borderWidth: 1, borderColor: "rgba(34,197,94,0.15)", width: "100%",
+    },
+    summaryMsg: { color: "#22c55e", fontSize: 13, lineHeight: 20, textAlign: "center", fontStyle: "italic" },
+    loggedListBox: {
+        width: "100%", backgroundColor: "#151515", borderRadius: 12,
+        padding: 12, marginBottom: 16, borderWidth: 1, borderColor: "#2a2a2a",
+    },
+    loggedListTitle: { color: "#fff", fontSize: 12, fontWeight: "700", marginBottom: 3 },
+    loggedListSub: { color: "#555", fontSize: 10, marginBottom: 10 },
+    loggedItem: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: "#1a1a1a" },
     loggedItemDeleted: { opacity: 0.4 },
-    loggedItemName: { color: "#ccc", fontSize: 13, flex: 1 },
-    deleteLogBtn: { width: 22, height: 22, borderRadius: 11, backgroundColor: "rgba(239,68,68,0.1)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(239,68,68,0.2)" },
-    summaryCloseBtn: { backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: 14, width: "100%", alignItems: "center" },
-    summaryCloseBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+    loggedItemName: { color: "#ccc", fontSize: 12, flex: 1 },
+    deleteLogBtn: {
+        width: 20, height: 20, borderRadius: 10,
+        backgroundColor: "rgba(239,68,68,0.1)",
+        alignItems: "center", justifyContent: "center",
+        borderWidth: 1, borderColor: "rgba(239,68,68,0.2)",
+    },
+    summaryCloseBtn: { backgroundColor: "#22c55e", borderRadius: 12, paddingVertical: 13, width: "100%", alignItems: "center" },
+    summaryCloseBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 });
