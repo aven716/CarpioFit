@@ -14,10 +14,10 @@ import {
   View,
 } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Stop, Circle as SvgCircle, Line as SvgLine, Text as SvgText } from "react-native-svg";
+import { T, useApp } from "../../lib/context/AppContext";
 import { supabase } from "../../lib/supabase";
 import { fetchOrGenerateWorkoutPlan, WorkoutPlan } from "../../lib/workoutPlan";
 import { PedometerContext } from "./_layout";
-
 const { width } = Dimensions.get("window");
 const SCREEN_WIDTH = width;
 
@@ -126,16 +126,13 @@ function WeightLineChart({ logs, goalWeight }: { logs: WeightLog[]; goalWeight: 
 
   const areaPath = `${linePath} L${pts[pts.length - 1].x},${pT + iH} L${pL},${pT + iH} Z`;
 
-  // Goal line Y
   const goalY = ty(goalWeight);
 
-  // Y ticks
   const yTicks = [minV, (minV + maxV) / 2, maxV].map((v) => ({
     y: ty(v),
     val: Math.round(v),
   }));
 
-  // X labels — first, middle, last
   const xLabels = [0, Math.floor((logs.length - 1) / 2), logs.length - 1]
     .filter((v, i, a) => a.indexOf(v) === i)
     .map((i) => ({
@@ -152,7 +149,6 @@ function WeightLineChart({ logs, goalWeight }: { logs: WeightLog[]; goalWeight: 
         </LinearGradient>
       </Defs>
 
-      {/* Grid lines */}
       {yTicks.map((t, i) => (
         <SvgLine key={i} x1={pL} y1={t.y} x2={W - pR} y2={t.y} stroke="#222" strokeWidth="1" />
       ))}
@@ -162,15 +158,12 @@ function WeightLineChart({ logs, goalWeight }: { logs: WeightLog[]; goalWeight: 
         </SvgText>
       ))}
 
-      {/* Goal line */}
       <SvgLine x1={pL} y1={goalY} x2={W - pR} y2={goalY} stroke="#22c55e" strokeWidth="1" strokeDasharray="4,3" />
       <SvgText x={W - pR + 2} y={goalY + 4} fontSize="8" fill="#22c55e" textAnchor="start">Goal</SvgText>
 
-      {/* Area + line */}
       <Path d={areaPath} fill="url(#wg)" />
       <Path d={linePath} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" />
 
-      {/* Dots */}
       {pts.map((pt, i) => (
         <SvgCircle
           key={i}
@@ -181,7 +174,6 @@ function WeightLineChart({ logs, goalWeight }: { logs: WeightLog[]; goalWeight: 
         />
       ))}
 
-      {/* X labels */}
       {xLabels.map((xl, i) => (
         <SvgText key={i} x={xl.x} y={H - 4} fontSize="8" fill="#555" textAnchor="middle">
           {xl.label}
@@ -252,10 +244,12 @@ function CompactPlanCard({ plan, onViewFull }: { plan: WorkoutPlan | null; onVie
 function WeightGoalCard({
   userData,
   userId,
+  userProfile,
   onWeightUpdated,
 }: {
   userData: UserData | null;
   userId: string | null;
+  userProfile: any;
   onWeightUpdated: (newWeight: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -266,22 +260,42 @@ function WeightGoalCard({
   const [newNotes, setNewNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // ── 1. Direction flags FIRST ──
+  const isLosingWeight = userData?.fitnessGoal === "lose";
+  const isGainingWeight = userData?.fitnessGoal === "gain";
+
+  // ── 2. Weights ──
   const currentWeight = parseFloat(userData?.currentWeight ?? "0");
   const goalWeight = parseFloat(userData?.goalWeight ?? "0");
-  const startWeight = weightLogs.length > 0
-    ? weightLogs[0].weight_kg
-    : currentWeight;
+  const startWeight = userProfile?.starting_weight_kg
+    ? Number(userProfile.starting_weight_kg)
+    : weightLogs.length > 0
+      ? weightLogs[0].weight_kg
+      : currentWeight;
 
+  // ── 3. Progress (uses isLosingWeight, now safely declared above) ──
   const totalToLose = Math.abs(startWeight - goalWeight);
-  const lost = Math.abs(startWeight - currentWeight);
+  const lost = isLosingWeight
+    ? startWeight - currentWeight   // positive when losing
+    : currentWeight - startWeight;  // positive when gaining
   const progressPercent = totalToLose > 0 ? Math.min((lost / totalToLose) * 100, 100) : 0;
 
+  // ── 4. Diff text ──
   const diff = currentWeight - goalWeight;
-  const diffText = diff > 0
-    ? `${diff.toFixed(1)} kg to go`
-    : diff < 0
-      ? `${Math.abs(diff).toFixed(1)} kg past goal! 🎉`
-      : "Goal reached! 🎉";
+  const diffText = (() => {
+    if (Math.abs(diff) < 0.05) return "Goal reached! 🎉";
+    if (isLosingWeight) {
+      return diff > 0
+        ? `${diff.toFixed(1)} kg to go`
+        : `${Math.abs(diff).toFixed(1)} kg past goal! 🎉`;
+    }
+    if (isGainingWeight) {
+      return diff < 0
+        ? `${Math.abs(diff).toFixed(1)} kg to go`
+        : `${diff.toFixed(1)} kg past goal! 🎉`;
+    }
+    return `${Math.abs(diff).toFixed(1)} kg from goal`;
+  })();
 
   useEffect(() => {
     if (expanded && userId) loadWeightLogs();
@@ -316,7 +330,6 @@ function WeightGoalCard({
 
     if (error) { Alert.alert("Error", error.message); setSubmitting(false); return; }
 
-    // Update profile current weight
     await supabase.from("profiles").update({ weight_kg: w }).eq("id", userId);
 
     onWeightUpdated(w.toString());
@@ -418,7 +431,11 @@ function WeightGoalCard({
               <View style={styles.weightStatDivider} />
               <View style={styles.weightStatItem}>
                 <Text style={[styles.weightStatVal, { color: "#3b82f6" }]}>
-                  {weightLogs.length > 0 ? `${weightLogs[0].weight_kg} kg` : "--"}
+                  {userProfile?.starting_weight_kg
+                    ? `${Number(userProfile.starting_weight_kg)} kg`
+                    : weightLogs.length > 0
+                      ? `${weightLogs[0].weight_kg} kg`
+                      : "--"}
                 </Text>
                 <Text style={styles.weightStatLabel}>Starting</Text>
               </View>
@@ -518,6 +535,10 @@ function WeightGoalCard({
 }
 
 export default function Home() {
+
+  const { lang, colors } = useApp();
+  const t = T[lang];
+  const C = colors;
   const navigation = useNavigation<any>();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
@@ -579,7 +600,7 @@ export default function Home() {
       const today = new Date().toISOString().split("T")[0];
 
       const [profileRes, dailyStatsRes, workoutsRes, foodLogsRes] = await Promise.all([
-        supabase.from("profiles").select("first_name, age, gender, weight_kg, goal_weight, goal, activity_level, height_cm, daily_calories, daily_protein, daily_fat, daily_carbs").eq("id", user.id).single(),
+        supabase.from("profiles").select("first_name, age, gender, weight_kg, goal_weight, goal, activity_level, height_cm, daily_calories, daily_protein, daily_fat, daily_carbs, starting_weight_kg").eq("id", user.id).single(),
         supabase.from("daily_stats").select("calories_burned, steps, active_minutes, distance_km, calories_intake, protein_g, carbs_g, fat_g").eq("user_id", user.id).eq("date", today).single(),
         supabase.from("workouts").select("name, type, duration_minutes, created_at").eq("user_id", user.id).eq("date", today).order("created_at", { ascending: true }),
         supabase.from("food_logs").select("calories, protein_g, carbs_g, fat_g, logged_at").eq("user_id", user.id),
@@ -738,10 +759,11 @@ export default function Home() {
       {/* Weekly Plan Card */}
       <CompactPlanCard plan={workoutPlan} onViewFull={() => navigation.navigate("Calendar")} />
 
-      {/* Weight Goal Card — now expandable */}
+      {/* Weight Goal Card */}
       <WeightGoalCard
         userData={userData}
         userId={userId}
+        userProfile={userProfile}
         onWeightUpdated={(newWeight) => {
           setUserData((prev) => prev ? { ...prev, currentWeight: newWeight } : prev);
         }}

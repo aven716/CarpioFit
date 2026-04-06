@@ -22,20 +22,22 @@ export default function TabsLayout() {
 
     return (
         <PedometerContext.Provider value={pedometer}>
-            <View style={styles.container}>
-                <Slot />
-                <BottomNavigation />
+    
+                <View style={styles.container}>
+                    <Slot />
+                    <BottomNavigation />
 
-                {!isAICoach && (
-                    <TouchableOpacity
-                        style={styles.fab}
-                        onPress={() => router.push("/tabs/ai-coach")}
-                        activeOpacity={0.85}
-                    >
-                        <Bot size={24} color="#fff" />
-                    </TouchableOpacity>
-                )}
-            </View>
+                    {!isAICoach && (
+                        <TouchableOpacity
+                            style={styles.fab}
+                            onPress={() => router.push("/tabs/ai-coach")}
+                            activeOpacity={0.85}
+                        >
+                            <Bot size={24} color="#fff" />
+                        </TouchableOpacity>
+                    )}
+                </View>
+        
         </PedometerContext.Provider>
     );
 }

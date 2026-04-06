@@ -1,7 +1,7 @@
 import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { CheckCircle, ChevronRight, Navigation, Pause, Play, SkipForward, Square, X } from "lucide-react-native";
+import { CheckCircle, ChevronRight, Navigation, Pause, Play, Share2, SkipForward, Square, X } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
     Alert,
@@ -9,9 +9,11 @@ import {
     AppState,
     Dimensions,
     Image,
+    Modal,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from "react-native";
@@ -404,7 +406,6 @@ function CardioTracker({
 
     return (
         <View style={ct.container}>
-            {/* ── Map — slightly shorter on small screens ── */}
             <View style={[ct.mapWrapper, { height: isSmallScreen ? height * 0.35 : height * 0.42 }]}>
                 <MapView
                     ref={mapRef}
@@ -431,7 +432,6 @@ function CardioTracker({
                     )}
                 </MapView>
 
-                {/* Top overlay: name + skip */}
                 <View style={ct.mapTopOverlay}>
                     <View style={ct.exerciseNameBadge}>
                         <Text style={ct.exerciseNameBadgeText} numberOfLines={1}>
@@ -443,7 +443,6 @@ function CardioTracker({
                     </TouchableOpacity>
                 </View>
 
-                {/* Tracking pill */}
                 {isTracking && (
                     <View style={[ct.trackingPill, isPaused && ct.trackingPillPaused]}>
                         <View style={[ct.trackingDot, isPaused && ct.trackingDotPaused]} />
@@ -452,9 +451,7 @@ function CardioTracker({
                 )}
             </View>
 
-            {/* ── Stats Panel ── */}
             <View style={ct.statsPanel}>
-                {/* Timer + pace in one compact row */}
                 <View style={ct.topRow}>
                     <View style={ct.timerBlock}>
                         <Text style={ct.timerValue}>{formatDuration(elapsedSeconds)}</Text>
@@ -467,7 +464,6 @@ function CardioTracker({
                     </View>
                 </View>
 
-                {/* 3-stat grid — compact */}
                 <View style={ct.statsGrid}>
                     <View style={ct.statBox}>
                         <Text style={ct.statVal}>{distanceKm.toFixed(2)}</Text>
@@ -483,7 +479,6 @@ function CardioTracker({
                     </View>
                 </View>
 
-                {/* Controls */}
                 <View style={ct.controls}>
                     {!hasStarted ? (
                         <TouchableOpacity style={ct.startBtn} onPress={handleStart}>
@@ -509,7 +504,6 @@ function CardioTracker({
                     )}
                 </View>
 
-                {/* Bernard — one liner, no box on small screens */}
                 {!isSmallScreen && (
                     <View style={ct.bernardRow}>
                         <Text style={ct.bernardEmoji}>🤖</Text>
@@ -575,10 +569,141 @@ function CardioSummaryCard({
     );
 }
 
+// ─── Share to Community Modal ─────────────────
+function ShareToCommunityModal({
+    visible,
+    defaultContent,
+    userId,
+    onClose,
+    onShared,
+}: {
+    visible: boolean;
+    defaultContent: string;
+    userId: string;
+    onClose: () => void;
+    onShared: () => void;
+}) {
+    const [title, setTitle] = useState("");
+    const [content, setContent] = useState(defaultContent);
+    const [category, setCategory] = useState("Achievement");
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (visible) {
+            setContent(defaultContent);
+            setTitle("");
+        }
+    }, [visible, defaultContent]);
+
+    const CATEGORIES = ["Achievement", "Motivation", "Discussion"];
+
+    const handleShare = async () => {
+        if (!title.trim() || !content.trim()) {
+            Alert.alert("Missing Fields", "Please fill in a title.");
+            return;
+        }
+
+        setSubmitting(true);
+
+        const { data: profile } = await supabase
+            .from("profiles")
+            .select("first_name, last_name")
+            .eq("id", userId)
+            .single();
+
+        const authorName = profile
+            ? `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "User"
+            : "User";
+
+        const initials = authorName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+
+        const { error } = await supabase.from("community_posts").insert({
+            user_id: userId,
+            author_name: authorName,
+            author_initials: initials,
+            title: title.trim(),
+            content: content.trim(),
+            category,
+            likes_count: 0,
+            comments_count: 0,
+        });
+
+        setSubmitting(false);
+
+        if (error) {
+            Alert.alert("Error", error.message);
+            return;
+        }
+
+        Alert.alert("🎉 Shared!", "Your post is now live in the Community!");
+        onShared();
+        onClose();
+    };
+
+    return (
+        <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+            <View style={shareStyles.overlay}>
+                <View style={shareStyles.sheet}>
+                    <View style={shareStyles.header}>
+                        <Text style={shareStyles.title}>Share to Community</Text>
+                        <TouchableOpacity onPress={onClose}>
+                            <X size={20} color="#888" />
+                        </TouchableOpacity>
+                    </View>
+
+                    <Text style={shareStyles.label}>Post Title *</Text>
+                    <TextInput
+                        style={shareStyles.input}
+                        value={title}
+                        onChangeText={setTitle}
+                        placeholder="e.g., Just crushed leg day! 🦵"
+                        placeholderTextColor="#555"
+                    />
+
+                    <Text style={shareStyles.label}>Category</Text>
+                    <View style={shareStyles.catRow}>
+                        {CATEGORIES.map((cat) => (
+                            <TouchableOpacity
+                                key={cat}
+                                style={[shareStyles.catBtn, category === cat && shareStyles.catBtnActive]}
+                                onPress={() => setCategory(cat)}
+                            >
+                                <Text style={[shareStyles.catBtnText, category === cat && shareStyles.catBtnTextActive]}>
+                                    {cat}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                    <Text style={shareStyles.label}>Caption</Text>
+                    <TextInput
+                        style={[shareStyles.input, { minHeight: 100, textAlignVertical: "top" }]}
+                        value={content}
+                        onChangeText={setContent}
+                        placeholder="Tell the community about your workout..."
+                        placeholderTextColor="#555"
+                        multiline
+                    />
+
+                    <TouchableOpacity
+                        style={[shareStyles.shareBtn, submitting && { opacity: 0.6 }]}
+                        onPress={handleShare}
+                        disabled={submitting}
+                    >
+                        <Share2 size={16} color="#fff" />
+                        <Text style={shareStyles.shareBtnText}>{submitting ? "Sharing..." : "Share Post"}</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+}
+
 // ─── Summary Screen ───────────────────────────
 function SummaryScreen({
     exercises, completedCount, skippedCount, dayName, focus,
-    loggedWorkoutIds, totalCaloriesBurned, totalActiveMinutes, totalDistanceKm, onClose,
+    loggedWorkoutIds, totalCaloriesBurned, totalActiveMinutes, totalDistanceKm,
+    userId, onClose,
 }: {
     exercises: Exercise[];
     completedCount: number;
@@ -589,9 +714,11 @@ function SummaryScreen({
     totalCaloriesBurned: number;
     totalActiveMinutes: number;
     totalDistanceKm: number;
+    userId: string;
     onClose: () => void;
 }) {
     const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+    const [shareModalVisible, setShareModalVisible] = useState(false);
 
     const handleDeleteLog = async (id: string, name: string) => {
         Alert.alert("Remove Log", `Remove "${name}" from your calendar?`, [
@@ -607,80 +734,114 @@ function SummaryScreen({
         ]);
     };
 
+    // Build the default community post content
+    const buildShareContent = () => {
+        const lines: string[] = [];
+        lines.push(`🏋️ Just finished a ${focus} workout — ${dayName}!`);
+        lines.push("");
+        if (totalCaloriesBurned > 0) lines.push(`🔥 ${totalCaloriesBurned} kcal burned`);
+        if (totalActiveMinutes > 0) lines.push(`⏱️ ${totalActiveMinutes} min active`);
+        if (totalDistanceKm > 0) lines.push(`📍 ${totalDistanceKm.toFixed(2)} km tracked`);
+        lines.push(`✅ ${completedCount} exercise${completedCount !== 1 ? "s" : ""} completed`);
+        if (skippedCount > 0) lines.push(`⏭️ ${skippedCount} skipped`);
+        lines.push("");
+        lines.push("Powered by CarpioFit 💪");
+        return lines.join("\n");
+    };
+
     return (
-        <View style={ws.summaryContainer}>
-            <ScrollView contentContainerStyle={ws.summaryScroll}>
-                <View style={ws.summaryCard}>
-                    <Text style={ws.summaryEmoji}>🏆</Text>
-                    <Text style={ws.summaryTitle}>Workout Complete!</Text>
-                    <Text style={ws.summarySub}>{focus} — {dayName}</Text>
+        <>
+            <View style={ws.summaryContainer}>
+                <ScrollView contentContainerStyle={ws.summaryScroll}>
+                    <View style={ws.summaryCard}>
+                        <Text style={ws.summaryEmoji}>🏆</Text>
+                        <Text style={ws.summaryTitle}>Workout Complete!</Text>
+                        <Text style={ws.summarySub}>{focus} — {dayName}</Text>
 
-                    <View style={ws.summaryStats}>
-                        <View style={ws.summaryStat}>
-                            <Text style={ws.summaryStatVal}>{completedCount}</Text>
-                            <Text style={ws.summaryStatLabel}>Done</Text>
+                        <View style={ws.summaryStats}>
+                            <View style={ws.summaryStat}>
+                                <Text style={ws.summaryStatVal}>{completedCount}</Text>
+                                <Text style={ws.summaryStatLabel}>Done</Text>
+                            </View>
+                            <View style={ws.summaryStat}>
+                                <Text style={[ws.summaryStatVal, { color: "#f97316" }]}>{skippedCount}</Text>
+                                <Text style={ws.summaryStatLabel}>Skipped</Text>
+                            </View>
+                            <View style={ws.summaryStat}>
+                                <Text style={[ws.summaryStatVal, { color: "#f97316" }]}>{totalCaloriesBurned}</Text>
+                                <Text style={ws.summaryStatLabel}>kcal</Text>
+                            </View>
+                            <View style={ws.summaryStat}>
+                                <Text style={[ws.summaryStatVal, { color: "#3b82f6" }]}>{totalActiveMinutes}m</Text>
+                                <Text style={ws.summaryStatLabel}>Active</Text>
+                            </View>
                         </View>
-                        <View style={ws.summaryStat}>
-                            <Text style={[ws.summaryStatVal, { color: "#f97316" }]}>{skippedCount}</Text>
-                            <Text style={ws.summaryStatLabel}>Skipped</Text>
+
+                        {totalDistanceKm > 0 && (
+                            <View style={ws.distanceBadge}>
+                                <Navigation size={14} color="#22c55e" />
+                                <Text style={ws.distanceBadgeText}>{totalDistanceKm.toFixed(2)} km tracked</Text>
+                            </View>
+                        )}
+
+                        <View style={ws.summaryMsgBox}>
+                            <Text style={ws.summaryMsg}>
+                                {completedCount === exercises.length
+                                    ? "🔥 Perfect session! Bernardo Carpio would be proud!"
+                                    : completedCount > exercises.length / 2
+                                        ? "💪 Solid work! Every rep counts toward greatness!"
+                                        : "👊 You showed up — that's what matters. Keep pushing!"}
+                            </Text>
                         </View>
-                        <View style={ws.summaryStat}>
-                            <Text style={[ws.summaryStatVal, { color: "#f97316" }]}>{totalCaloriesBurned}</Text>
-                            <Text style={ws.summaryStatLabel}>kcal</Text>
-                        </View>
-                        <View style={ws.summaryStat}>
-                            <Text style={[ws.summaryStatVal, { color: "#3b82f6" }]}>{totalActiveMinutes}m</Text>
-                            <Text style={ws.summaryStatLabel}>Active</Text>
-                        </View>
+
+                        {/* ── Share to Community button ── */}
+                        <TouchableOpacity
+                            style={ws.shareToCommBtn}
+                            onPress={() => setShareModalVisible(true)}
+                        >
+                            <Share2 size={16} color="#22c55e" />
+                            <Text style={ws.shareToCommBtnText}>Share to Community</Text>
+                        </TouchableOpacity>
+
+                        {loggedWorkoutIds.length > 0 && (
+                            <View style={ws.loggedListBox}>
+                                <Text style={ws.loggedListTitle}>✅ Logged to Calendar</Text>
+                                <Text style={ws.loggedListSub}>Tap × to remove if logged by mistake</Text>
+                                {loggedWorkoutIds.map((item) => {
+                                    const [id, name] = item.split("||");
+                                    const isDeleted = deletedIds.has(id);
+                                    return (
+                                        <View key={id} style={[ws.loggedItem, isDeleted && ws.loggedItemDeleted]}>
+                                            <CheckCircle size={13} color={isDeleted ? "#333" : "#22c55e"} />
+                                            <Text style={[ws.loggedItemName, isDeleted && { color: "#333", textDecorationLine: "line-through" }]}>
+                                                {name}
+                                            </Text>
+                                            {!isDeleted && (
+                                                <TouchableOpacity style={ws.deleteLogBtn} onPress={() => handleDeleteLog(id, name)}>
+                                                    <X size={11} color="#ef4444" />
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
+                                    );
+                                })}
+                            </View>
+                        )}
+
+                        <TouchableOpacity style={ws.summaryCloseBtn} onPress={onClose}>
+                            <Text style={ws.summaryCloseBtnText}>Back to Calendar</Text>
+                        </TouchableOpacity>
                     </View>
+                </ScrollView>
+            </View>
 
-                    {totalDistanceKm > 0 && (
-                        <View style={ws.distanceBadge}>
-                            <Navigation size={14} color="#22c55e" />
-                            <Text style={ws.distanceBadgeText}>{totalDistanceKm.toFixed(2)} km tracked</Text>
-                        </View>
-                    )}
-
-                    <View style={ws.summaryMsgBox}>
-                        <Text style={ws.summaryMsg}>
-                            {completedCount === exercises.length
-                                ? "🔥 Perfect session! Bernardo Carpio would be proud!"
-                                : completedCount > exercises.length / 2
-                                    ? "💪 Solid work! Every rep counts toward greatness!"
-                                    : "👊 You showed up — that's what matters. Keep pushing!"}
-                        </Text>
-                    </View>
-
-                    {loggedWorkoutIds.length > 0 && (
-                        <View style={ws.loggedListBox}>
-                            <Text style={ws.loggedListTitle}>✅ Logged to Calendar</Text>
-                            <Text style={ws.loggedListSub}>Tap × to remove if logged by mistake</Text>
-                            {loggedWorkoutIds.map((item) => {
-                                const [id, name] = item.split("||");
-                                const isDeleted = deletedIds.has(id);
-                                return (
-                                    <View key={id} style={[ws.loggedItem, isDeleted && ws.loggedItemDeleted]}>
-                                        <CheckCircle size={13} color={isDeleted ? "#333" : "#22c55e"} />
-                                        <Text style={[ws.loggedItemName, isDeleted && { color: "#333", textDecorationLine: "line-through" }]}>
-                                            {name}
-                                        </Text>
-                                        {!isDeleted && (
-                                            <TouchableOpacity style={ws.deleteLogBtn} onPress={() => handleDeleteLog(id, name)}>
-                                                <X size={11} color="#ef4444" />
-                                            </TouchableOpacity>
-                                        )}
-                                    </View>
-                                );
-                            })}
-                        </View>
-                    )}
-
-                    <TouchableOpacity style={ws.summaryCloseBtn} onPress={onClose}>
-                        <Text style={ws.summaryCloseBtnText}>Back to Calendar</Text>
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
-        </View>
+            <ShareToCommunityModal
+                visible={shareModalVisible}
+                defaultContent={buildShareContent()}
+                userId={userId}
+                onClose={() => setShareModalVisible(false)}
+                onShared={() => setShareModalVisible(false)}
+            />
+        </>
     );
 }
 
@@ -857,7 +1018,6 @@ export default function WorkoutSession() {
         ]);
     };
 
-    // Shared compact header used in both normal + cardio views
     const SessionHeader = ({ showSkip = true }: { showSkip?: boolean }) => (
         <>
             <View style={ws.header}>
@@ -889,6 +1049,7 @@ export default function WorkoutSession() {
                 skippedCount={skippedExercises.size} dayName={dayName} focus={focus}
                 loggedWorkoutIds={loggedWorkoutIds} totalCaloriesBurned={totalCaloriesBurned}
                 totalActiveMinutes={totalActiveMinutes} totalDistanceKm={totalDistanceKm}
+                userId={userId}
                 onClose={() => router.back()}
             />
         );
@@ -913,7 +1074,6 @@ export default function WorkoutSession() {
         );
     }
 
-    // ─── Cardio Tracker ───────────────────────
     if (showCardioTracker) {
         return (
             <View style={ws.container}>
@@ -929,7 +1089,6 @@ export default function WorkoutSession() {
         );
     }
 
-    // ─── Normal Exercise ──────────────────────
     return (
         <View style={ws.container}>
             <StatusBar style="light" />
@@ -938,7 +1097,6 @@ export default function WorkoutSession() {
             <ScrollView contentContainerStyle={ws.scrollContent} showsVerticalScrollIndicator={false}>
                 <Animated.View style={{ opacity: fadeAnim }}>
 
-                    {/* GIF / Fallback */}
                     <View style={ws.gifContainer}>
                         {loadingGif ? (
                             <View style={ws.gifPlaceholder}>
@@ -959,7 +1117,6 @@ export default function WorkoutSession() {
                         )}
                     </View>
 
-                    {/* Exercise Info */}
                     <View style={ws.infoBox}>
                         <Text style={ws.exerciseName}>{currentExercise.name}</Text>
                         {exerciseData && (
@@ -976,7 +1133,6 @@ export default function WorkoutSession() {
                         )}
                     </View>
 
-                    {/* Sets & Reps */}
                     {!showRest && (
                         <View style={ws.setsBox}>
                             <View style={ws.setsRow}>
@@ -996,7 +1152,6 @@ export default function WorkoutSession() {
 
                     {showRest && <RestTimer seconds={60} onDone={handleAfterRest} />}
 
-                    {/* Instructions */}
                     {!showRest && exerciseData?.instructions && exerciseData.instructions.length > 0 && (
                         <View style={ws.instructionsBox}>
                             <Text style={ws.instructionsTitle}>How to do it</Text>
@@ -1011,7 +1166,6 @@ export default function WorkoutSession() {
                         </View>
                     )}
 
-                    {/* Bernard */}
                     {!showRest && (
                         <View style={ws.bernardBox}>
                             <Text style={ws.bernardEmoji}>🤖</Text>
@@ -1019,7 +1173,6 @@ export default function WorkoutSession() {
                         </View>
                     )}
 
-                    {/* Next button */}
                     {!showRest && (
                         <TouchableOpacity style={ws.nextBtn} onPress={handleNextSet}>
                             {currentSet < totalSets ? (
@@ -1032,7 +1185,6 @@ export default function WorkoutSession() {
                         </TouchableOpacity>
                     )}
 
-                    {/* Nav dots */}
                     <View style={ws.dotsRow}>
                         {exercises.map((_, i) => (
                             <View key={i} style={[
@@ -1050,201 +1202,96 @@ export default function WorkoutSession() {
     );
 }
 
+// ─── Share Modal Styles ───────────────────────
+const shareStyles = StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "flex-end" },
+    sheet: { backgroundColor: "#1a1a1a", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24 },
+    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+    title: { color: "#fff", fontSize: 18, fontWeight: "700" },
+    label: { color: "#888", fontSize: 13, fontWeight: "500", marginBottom: 8 },
+    input: { backgroundColor: "#2a2a2a", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, color: "#fff", fontSize: 14, marginBottom: 14, borderWidth: 1, borderColor: "#333" },
+    catRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
+    catBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: "#333", backgroundColor: "#2a2a2a" },
+    catBtnActive: { backgroundColor: "rgba(34,197,94,0.15)", borderColor: "#22c55e" },
+    catBtnText: { color: "#888", fontSize: 13 },
+    catBtnTextActive: { color: "#22c55e", fontWeight: "700" },
+    shareBtn: { backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 4 },
+    shareBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+});
+
 // ─── Cardio Tracker Styles ────────────────────
 const ct = StyleSheet.create({
     container: { flex: 1 },
-
-    // Permission
     permissionBox: { flex: 1, alignItems: "center", justifyContent: "center", padding: 28, backgroundColor: "#0a0a0a" },
     permissionEmoji: { fontSize: 44, marginBottom: 12 },
     permissionTitle: { color: "#fff", fontSize: 18, fontWeight: "700", marginBottom: 8, textAlign: "center" },
     permissionSub: { color: "#888", fontSize: 13, lineHeight: 20, textAlign: "center", marginBottom: 20 },
     skipCardioBtn: { borderWidth: 1, borderColor: "#333", borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
     skipCardioBtnText: { color: "#888", fontSize: 13, fontWeight: "600" },
-
-    // Map
     mapWrapper: { position: "relative", width: "100%" },
     map: { width: "100%", height: "100%" },
-    mapTopOverlay: {
-        position: "absolute", top: 10, left: 12, right: 12,
-        flexDirection: "row", alignItems: "center", gap: 8,
-    },
-    exerciseNameBadge: {
-        flex: 1, backgroundColor: "rgba(0,0,0,0.72)", borderRadius: 9,
-        paddingHorizontal: 12, paddingVertical: 7,
-        borderWidth: 1, borderColor: "rgba(34,197,94,0.3)",
-    },
+    mapTopOverlay: { position: "absolute", top: 10, left: 12, right: 12, flexDirection: "row", alignItems: "center", gap: 8 },
+    exerciseNameBadge: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: "rgba(34,197,94,0.3)" },
     exerciseNameBadgeText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-    skipOverlayBtn: {
-        width: 33, height: 33, borderRadius: 9,
-        backgroundColor: "rgba(0,0,0,0.72)",
-        alignItems: "center", justifyContent: "center",
-        borderWidth: 1, borderColor: "#333",
-    },
-    trackingPill: {
-        position: "absolute", top: 50, alignSelf: "center",
-        flexDirection: "row", alignItems: "center", gap: 5,
-        backgroundColor: "rgba(34,197,94,0.9)", borderRadius: 18,
-        paddingHorizontal: 12, paddingVertical: 5,
-    },
+    skipOverlayBtn: { width: 33, height: 33, borderRadius: 9, backgroundColor: "rgba(0,0,0,0.72)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#333" },
+    trackingPill: { position: "absolute", top: 50, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(34,197,94,0.9)", borderRadius: 18, paddingHorizontal: 12, paddingVertical: 5 },
     trackingPillPaused: { backgroundColor: "rgba(249,115,22,0.9)" },
     trackingDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#fff" },
     trackingDotPaused: {},
     trackingText: { color: "#fff", fontSize: 10, fontWeight: "800", letterSpacing: 1 },
     trackingTextPaused: {},
-    startMarker: {
-        width: 22, height: 22, borderRadius: 11,
-        backgroundColor: "#22c55e", alignItems: "center", justifyContent: "center",
-        borderWidth: 2, borderColor: "#fff",
-    },
+    startMarker: { width: 22, height: 22, borderRadius: 11, backgroundColor: "#22c55e", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff" },
     startMarkerText: { color: "#fff", fontSize: 10, fontWeight: "800" },
-
-    // Stats panel — tighter padding on small screens
-    statsPanel: {
-        backgroundColor: "#111",
-        borderTopLeftRadius: 20, borderTopRightRadius: 20,
-        paddingHorizontal: 14,
-        paddingTop: 14,
-        paddingBottom: isSmallScreen ? 6 : 10,
-        borderTopWidth: 1, borderTopColor: "#2a2a2a",
-        flex: 1,
-    },
-
-    // Compact top row: timer + pace side by side
-    topRow: {
-        flexDirection: "row", alignItems: "center",
-        marginBottom: isSmallScreen ? 10 : 14,
-    },
+    statsPanel: { backgroundColor: "#111", borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 14, paddingTop: 14, paddingBottom: isSmallScreen ? 6 : 10, borderTopWidth: 1, borderTopColor: "#2a2a2a", flex: 1 },
+    topRow: { flexDirection: "row", alignItems: "center", marginBottom: isSmallScreen ? 10 : 14 },
     timerBlock: { flex: 1, alignItems: "center" },
     paceBlock: { flex: 1, alignItems: "center" },
     divider: { width: 1, height: 36, backgroundColor: "#2a2a2a" },
-    timerValue: {
-        color: "#fff",
-        fontSize: isSmallScreen ? 32 : 38,
-        fontWeight: "800",
-        fontVariant: ["tabular-nums"],
-    },
+    timerValue: { color: "#fff", fontSize: isSmallScreen ? 32 : 38, fontWeight: "800", fontVariant: ["tabular-nums"] },
     timerLabel: { color: "#555", fontSize: 10, marginTop: 1 },
-    paceValue: {
-        color: "#a855f7",
-        fontSize: isSmallScreen ? 22 : 26,
-        fontWeight: "700",
-        fontVariant: ["tabular-nums"],
-    },
-
-    // 3-stat grid
-    statsGrid: {
-        flexDirection: "row", gap: 7,
-        marginBottom: isSmallScreen ? 10 : 13,
-    },
-    statBox: {
-        flex: 1,
-        backgroundColor: "#1a1a1a",
-        borderRadius: 12,
-        paddingVertical: isSmallScreen ? 8 : 11,
-        alignItems: "center",
-        borderWidth: 1, borderColor: "#2a2a2a",
-    },
-    statBoxCenter: {
-        borderColor: "rgba(59,130,246,0.2)",
-        backgroundColor: "rgba(59,130,246,0.05)",
-    },
-    statVal: {
-        color: "#22c55e",
-        fontSize: isSmallScreen ? 18 : 21,
-        fontWeight: "800",
-        fontVariant: ["tabular-nums"],
-    },
+    paceValue: { color: "#a855f7", fontSize: isSmallScreen ? 22 : 26, fontWeight: "700", fontVariant: ["tabular-nums"] },
+    statsGrid: { flexDirection: "row", gap: 7, marginBottom: isSmallScreen ? 10 : 13 },
+    statBox: { flex: 1, backgroundColor: "#1a1a1a", borderRadius: 12, paddingVertical: isSmallScreen ? 8 : 11, alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a" },
+    statBoxCenter: { borderColor: "rgba(59,130,246,0.2)", backgroundColor: "rgba(59,130,246,0.05)" },
+    statVal: { color: "#22c55e", fontSize: isSmallScreen ? 18 : 21, fontWeight: "800", fontVariant: ["tabular-nums"] },
     statUnit: { color: "#555", fontSize: 10, marginTop: 2 },
-
-    // Controls
     controls: { marginBottom: isSmallScreen ? 8 : 12 },
-    startBtn: {
-        backgroundColor: "#22c55e", borderRadius: 14,
-        paddingVertical: isSmallScreen ? 13 : 15,
-        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    },
+    startBtn: { backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: isSmallScreen ? 13 : 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
     startBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
     activeControls: { flexDirection: "row", gap: 8 },
-    pauseBtn: {
-        flex: 1, backgroundColor: "#1a1a1a", borderRadius: 12,
-        paddingVertical: isSmallScreen ? 11 : 13,
-        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
-        borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    pauseBtn: { flex: 1, backgroundColor: "#1a1a1a", borderRadius: 12, paddingVertical: isSmallScreen ? 11 : 13, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderWidth: 1, borderColor: "#2a2a2a" },
     pauseBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-    finishBtn: {
-        flex: 1, backgroundColor: "#ef4444", borderRadius: 12,
-        paddingVertical: isSmallScreen ? 11 : 13,
-        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
-    },
+    finishBtn: { flex: 1, backgroundColor: "#ef4444", borderRadius: 12, paddingVertical: isSmallScreen ? 11 : 13, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
     finishBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-
-    // Bernard (hidden on small screens)
-    bernardRow: {
-        flexDirection: "row", alignItems: "flex-start", gap: 7,
-        backgroundColor: "rgba(34,197,94,0.05)", borderRadius: 10, padding: 10,
-        borderWidth: 1, borderColor: "rgba(34,197,94,0.1)",
-    },
+    bernardRow: { flexDirection: "row", alignItems: "flex-start", gap: 7, backgroundColor: "rgba(34,197,94,0.05)", borderRadius: 10, padding: 10, borderWidth: 1, borderColor: "rgba(34,197,94,0.1)" },
     bernardEmoji: { fontSize: 15, flexShrink: 0 },
     bernardText: { color: "#22c55e", fontSize: 11, lineHeight: 16, flex: 1, fontStyle: "italic" },
-
-    // Cardio summary
     cardioSummaryOverlay: { flex: 1, backgroundColor: "#0a0a0a", justifyContent: "center", alignItems: "center", padding: 20 },
-    cardioSummaryCard: {
-        backgroundColor: "#111", borderRadius: 22, padding: 22,
-        width: "100%", alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    cardioSummaryCard: { backgroundColor: "#111", borderRadius: 22, padding: 22, width: "100%", alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a" },
     cardioSummaryEmoji: { fontSize: 44, marginBottom: 10 },
     cardioSummaryTitle: { color: "#fff", fontSize: 20, fontWeight: "800", marginBottom: 3 },
     cardioSummaryExName: { color: "#555", fontSize: 12, marginBottom: 16, textTransform: "capitalize" },
     cardioSummaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 20, width: "100%" },
-    cardioSummaryStat: {
-        width: "47%", backgroundColor: "#1a1a1a", borderRadius: 12,
-        padding: 12, alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    cardioSummaryStat: { width: "47%", backgroundColor: "#1a1a1a", borderRadius: 12, padding: 12, alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a" },
     cardioSummaryVal: { color: "#22c55e", fontSize: 22, fontWeight: "800" },
     cardioSummaryUnit: { color: "#555", fontSize: 10, marginTop: 3 },
-    continueBtn: {
-        backgroundColor: "#22c55e", borderRadius: 12, paddingVertical: 13,
-        width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5,
-    },
+    continueBtn: { backgroundColor: "#22c55e", borderRadius: 12, paddingVertical: 13, width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 },
     continueBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
 });
 
 // ─── Workout Session Styles ───────────────────
 const ws = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#0a0a0a" },
-
-    // Compact header
-    header: {
-        flexDirection: "row", alignItems: "center",
-        paddingHorizontal: 14,
-        paddingTop: isSmallScreen ? 44 : 50,
-        paddingBottom: 10,
-        backgroundColor: "#111",
-    },
+    header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingTop: isSmallScreen ? 44 : 50, paddingBottom: 10, backgroundColor: "#111" },
     quitBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
     skipBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: "#1a1a1a", alignItems: "center", justifyContent: "center" },
     headerFocus: { color: "#fff", fontSize: 14, fontWeight: "700" },
     headerDay: { color: "#555", fontSize: 11, marginTop: 1 },
-
     progressBarTrack: { height: 3, backgroundColor: "#1a1a1a", width: "100%" },
     progressBarFill: { height: 3, backgroundColor: "#22c55e", borderRadius: 2 },
     progressLabel: { color: "#444", fontSize: 11, textAlign: "center", paddingVertical: 6 },
-
-    // Scroll body — tighter on small screens
     scrollContent: { padding: isSmallScreen ? 12 : 16, paddingBottom: 50 },
-
-    // GIF container — shorter on small screens
-    gifContainer: {
-        width: "100%",
-        height: isSmallScreen ? 200 : 260,
-        backgroundColor: "#111", borderRadius: 18,
-        overflow: "hidden", marginBottom: 14,
-        alignItems: "center", justifyContent: "center",
-        borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    gifContainer: { width: "100%", height: isSmallScreen ? 200 : 260, backgroundColor: "#111", borderRadius: 18, overflow: "hidden", marginBottom: 14, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#2a2a2a" },
     gifImage: { width: "100%", height: "100%" },
     gifPlaceholder: { alignItems: "center", justifyContent: "center", flex: 1 },
     gifLoadingText: { color: "#444", fontSize: 13 },
@@ -1252,67 +1299,36 @@ const ws = StyleSheet.create({
     fallbackEmoji: { fontSize: isSmallScreen ? 52 : 64 },
     fallbackBodyPart: { fontSize: 16, fontWeight: "700" },
     fallbackSub: { color: "#444", fontSize: 11 },
-
     infoBox: { marginBottom: 12 },
     exerciseName: { color: "#fff", fontSize: isSmallScreen ? 18 : 20, fontWeight: "800", marginBottom: 8, textTransform: "capitalize" },
     muscleRow: { flexDirection: "row", gap: 7, flexWrap: "wrap" },
-    musclePill: {
-        backgroundColor: "rgba(34,197,94,0.12)", borderRadius: 16,
-        paddingHorizontal: 10, paddingVertical: 4,
-        borderWidth: 1, borderColor: "rgba(34,197,94,0.25)",
-    },
+    musclePill: { backgroundColor: "rgba(34,197,94,0.12)", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: "rgba(34,197,94,0.25)" },
     musclePillText: { color: "#22c55e", fontSize: 11, fontWeight: "600", textTransform: "capitalize" },
-
-    setsBox: {
-        backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 12 : 15,
-        alignItems: "center", marginBottom: 12,
-        borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    setsBox: { backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 12 : 15, alignItems: "center", marginBottom: 12, borderWidth: 1, borderColor: "#2a2a2a" },
     setsRow: { flexDirection: "row", gap: 7, marginBottom: 10 },
     setDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: "#2a2a2a", borderWidth: 1, borderColor: "#333" },
     setDotDone: { backgroundColor: "#22c55e", borderColor: "#22c55e" },
     setDotActive: { backgroundColor: "rgba(34,197,94,0.3)", borderColor: "#22c55e", width: 14, height: 14, borderRadius: 7 },
     setLabel: { color: "#fff", fontSize: 14, fontWeight: "700", marginBottom: 5 },
     repsLabel: { color: "#22c55e", fontSize: isSmallScreen ? 24 : 28, fontWeight: "800" },
-
-    restTimerBox: {
-        backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 16 : 22,
-        alignItems: "center", marginBottom: 12,
-        borderWidth: 1, borderColor: "rgba(59,130,246,0.2)",
-    },
+    restTimerBox: { backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 16 : 22, alignItems: "center", marginBottom: 12, borderWidth: 1, borderColor: "rgba(59,130,246,0.2)" },
     restTimerTitle: { color: "#888", fontSize: 13, marginBottom: 6 },
     restTimerCount: { color: "#3b82f6", fontSize: isSmallScreen ? 40 : 52, fontWeight: "800", marginBottom: 14 },
     restTimerTrack: { width: "100%", height: 5, backgroundColor: "#1a1a1a", borderRadius: 3, overflow: "hidden", marginBottom: 14 },
     restTimerFill: { height: 5, backgroundColor: "#3b82f6", borderRadius: 3 },
     skipRestBtn: { paddingHorizontal: 18, paddingVertical: 8, backgroundColor: "#1a1a1a", borderRadius: 9, borderWidth: 1, borderColor: "#333" },
     skipRestBtnText: { color: "#888", fontSize: 12, fontWeight: "600" },
-
-    instructionsBox: {
-        backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 12 : 15,
-        marginBottom: 12, borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    instructionsBox: { backgroundColor: "#111", borderRadius: 14, padding: isSmallScreen ? 12 : 15, marginBottom: 12, borderWidth: 1, borderColor: "#2a2a2a" },
     instructionsTitle: { color: "#fff", fontSize: 13, fontWeight: "700", marginBottom: 10 },
     instructionRow: { flexDirection: "row", gap: 9, marginBottom: 8, alignItems: "flex-start" },
     instructionNum: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#2a2a2a", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 },
     instructionNumText: { color: "#888", fontSize: 10, fontWeight: "700" },
     instructionText: { color: "#aaa", fontSize: 12, lineHeight: 18, flex: 1 },
-
-    bernardBox: {
-        flexDirection: "row", alignItems: "flex-start", gap: 9,
-        backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 12, padding: 12,
-        marginBottom: 16, borderWidth: 1, borderColor: "rgba(34,197,94,0.12)",
-    },
+    bernardBox: { flexDirection: "row", alignItems: "flex-start", gap: 9, backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: "rgba(34,197,94,0.12)" },
     bernardEmoji: { fontSize: 20, flexShrink: 0 },
     bernardText: { color: "#22c55e", fontSize: 12, lineHeight: 18, flex: 1, fontStyle: "italic" },
-
-    nextBtn: {
-        backgroundColor: "#22c55e", borderRadius: 14,
-        paddingVertical: isSmallScreen ? 13 : 15,
-        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
-        marginBottom: 16,
-    },
+    nextBtn: { backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: isSmallScreen ? 13 : 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginBottom: 16 },
     nextBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-
     dotsRow: { flexDirection: "row", justifyContent: "center", gap: 5, marginBottom: 16 },
     navDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#2a2a2a" },
     navDotActive: { backgroundColor: "#22c55e", width: 18, borderRadius: 4 },
@@ -1322,10 +1338,7 @@ const ws = StyleSheet.create({
     // Summary
     summaryContainer: { flex: 1, backgroundColor: "#0a0a0a" },
     summaryScroll: { flexGrow: 1, justifyContent: "center", padding: 20 },
-    summaryCard: {
-        backgroundColor: "#111", borderRadius: 22, padding: isSmallScreen ? 20 : 26,
-        width: "100%", alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a",
-    },
+    summaryCard: { backgroundColor: "#111", borderRadius: 22, padding: isSmallScreen ? 20 : 26, width: "100%", alignItems: "center", borderWidth: 1, borderColor: "#2a2a2a" },
     summaryEmoji: { fontSize: isSmallScreen ? 48 : 58, marginBottom: 10 },
     summaryTitle: { color: "#fff", fontSize: isSmallScreen ? 20 : 23, fontWeight: "800", marginBottom: 3 },
     summarySub: { color: "#555", fontSize: 12, marginBottom: 20 },
@@ -1333,33 +1346,27 @@ const ws = StyleSheet.create({
     summaryStat: { alignItems: "center" },
     summaryStatVal: { color: "#22c55e", fontSize: isSmallScreen ? 22 : 26, fontWeight: "800" },
     summaryStatLabel: { color: "#555", fontSize: 11, marginTop: 2 },
-    distanceBadge: {
-        flexDirection: "row", alignItems: "center", gap: 5,
-        backgroundColor: "rgba(34,197,94,0.08)", borderRadius: 9,
-        paddingHorizontal: 12, paddingVertical: 7, marginBottom: 14,
-        borderWidth: 1, borderColor: "rgba(34,197,94,0.2)",
-    },
+    distanceBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(34,197,94,0.08)", borderRadius: 9, paddingHorizontal: 12, paddingVertical: 7, marginBottom: 14, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" },
     distanceBadgeText: { color: "#22c55e", fontSize: 12, fontWeight: "600" },
-    summaryMsgBox: {
-        backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 12, padding: 12,
-        marginBottom: 14, borderWidth: 1, borderColor: "rgba(34,197,94,0.15)", width: "100%",
-    },
+    summaryMsgBox: { backgroundColor: "rgba(34,197,94,0.06)", borderRadius: 12, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: "rgba(34,197,94,0.15)", width: "100%" },
     summaryMsg: { color: "#22c55e", fontSize: 13, lineHeight: 20, textAlign: "center", fontStyle: "italic" },
-    loggedListBox: {
-        width: "100%", backgroundColor: "#151515", borderRadius: 12,
-        padding: 12, marginBottom: 16, borderWidth: 1, borderColor: "#2a2a2a",
+
+    // Share button (new)
+    shareToCommBtn: {
+        flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+        width: "100%", borderRadius: 14, paddingVertical: 13, marginBottom: 12,
+        backgroundColor: "rgba(34,197,94,0.1)",
+        borderWidth: 1, borderColor: "rgba(34,197,94,0.3)",
     },
+    shareToCommBtnText: { color: "#22c55e", fontSize: 14, fontWeight: "700" },
+
+    loggedListBox: { width: "100%", backgroundColor: "#151515", borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: "#2a2a2a" },
     loggedListTitle: { color: "#fff", fontSize: 12, fontWeight: "700", marginBottom: 3 },
     loggedListSub: { color: "#555", fontSize: 10, marginBottom: 10 },
     loggedItem: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: "#1a1a1a" },
     loggedItemDeleted: { opacity: 0.4 },
     loggedItemName: { color: "#ccc", fontSize: 12, flex: 1 },
-    deleteLogBtn: {
-        width: 20, height: 20, borderRadius: 10,
-        backgroundColor: "rgba(239,68,68,0.1)",
-        alignItems: "center", justifyContent: "center",
-        borderWidth: 1, borderColor: "rgba(239,68,68,0.2)",
-    },
+    deleteLogBtn: { width: 20, height: 20, borderRadius: 10, backgroundColor: "rgba(239,68,68,0.1)", alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "rgba(239,68,68,0.2)" },
     summaryCloseBtn: { backgroundColor: "#22c55e", borderRadius: 12, paddingVertical: 13, width: "100%", alignItems: "center" },
     summaryCloseBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
 });

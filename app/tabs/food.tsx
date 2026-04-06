@@ -31,8 +31,8 @@ import {
     View,
 } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Stop, Circle as SvgCircle, Line as SvgLine, Text as SvgText } from "react-native-svg";
+import { T, useApp } from "../../lib/context/AppContext";
 import { supabase } from "../../lib/supabase";
-
 // ─── Types ───────────────────────────────────
 interface MealItem {
     id: string;
@@ -377,6 +377,9 @@ function EditFoodModal({
 
 // ─── Main Screen ──────────────────────────────
 export default function FoodLogging() {
+    const { lang, colors } = useApp();
+    const t = T[lang];
+    const C = colors;
     const [selectedDate, setSelectedDate] = useState(toDateStr(new Date()));
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [meals, setMeals] = useState<MealItem[]>([]);

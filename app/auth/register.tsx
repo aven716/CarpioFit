@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
     Alert,
+    Image,
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
@@ -38,7 +39,6 @@ export default function Register() {
             return;
         }
 
-        // Navigate to OTP screen, passing the email along
         router.push({ pathname: "/auth/verify-otp", params: { email } });
     };
 
@@ -51,7 +51,13 @@ export default function Register() {
             <View style={styles.inner}>
                 <View style={styles.topSection}>
                     <View style={styles.logoCircle}>
-                        <Text style={styles.logoEmoji}>🏋️</Text>
+                        <Image
+                            // Place your logo file at assets/images/logo.png
+                            // and update the path below if it differs
+                            source={require("../../assets/CarpioFitLogo.png")}
+                            style={styles.logoImage}
+                            resizeMode="contain"
+                        />
                     </View>
                     <Text style={styles.appName}>CarpioFit</Text>
                     <Text style={styles.tagline}>Start your fitness journey today</Text>
@@ -118,9 +124,14 @@ const styles = StyleSheet.create({
         width: 80, height: 80, borderRadius: 40,
         backgroundColor: "rgba(34,197,94,0.12)",
         borderWidth: 2, borderColor: "rgba(34,197,94,0.25)",
-        alignItems: "center", justifyContent: "center", marginBottom: 4,
+        alignItems: "center", justifyContent: "center",
+        marginBottom: 4,
+        overflow: "hidden",
     },
-    logoEmoji: { fontSize: 36 },
+    logoImage: {
+        width: 52,
+        height: 52,
+    },
     appName: { color: "#fff", fontSize: 28, fontWeight: "800", letterSpacing: 0.5 },
     tagline: { color: "#888", fontSize: 14 },
     card: {

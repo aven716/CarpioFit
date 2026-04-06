@@ -81,7 +81,7 @@ export default function Onboarding() {
 
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
+        if (!user) { setLoading(false); return; }
 
         const nutrition = calculateNutrition(
             Number(age),
@@ -92,6 +92,7 @@ export default function Onboarding() {
             goal
         );
 
+        // Save profile with starting_weight_kg preserved
         const { error } = await supabase.from("profiles").upsert({
             id: user.id,
             first_name: firstName,
@@ -101,6 +102,7 @@ export default function Onboarding() {
             gender,
             height_cm: Number(height),
             weight_kg: Number(weight),
+            starting_weight_kg: Number(weight),  // ← preserve forever
             goal_weight: Number(goalWeight),
             activity_level: activityLevel,
             goal,
@@ -110,13 +112,20 @@ export default function Onboarding() {
             daily_carbs: nutrition.carbs,
         });
 
-        setLoading(false);
-
         if (error) {
+            setLoading(false);
             Alert.alert("Error", error.message);
             return;
         }
 
+        // Create the first weight log entry so charts have an anchor point
+        await supabase.from("weight_logs").insert({
+            user_id: user.id,
+            weight_kg: Number(weight),
+            notes: "Starting weight",
+        });
+
+        setLoading(false);
         router.replace("/tabs");
     };
 

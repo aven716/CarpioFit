@@ -21,20 +21,17 @@ export default function VerifyOTP() {
     const inputs = useRef<(TextInput | null)[]>([]);
 
     const handleChange = (text: string, index: number) => {
-        // Only allow single digit
         const digit = text.replace(/[^0-9]/g, "").slice(-1);
         const newOtp = [...otp];
         newOtp[index] = digit;
         setOtp(newOtp);
 
-        // Auto-advance to next input
         if (digit && index < 5) {
             inputs.current[index + 1]?.focus();
         }
     };
 
     const handleKeyPress = (e: any, index: number) => {
-        // Go back on backspace if current field is empty
         if (e.nativeEvent.key === "Backspace" && !otp[index] && index > 0) {
             inputs.current[index - 1]?.focus();
         }
@@ -62,7 +59,6 @@ export default function VerifyOTP() {
             return;
         }
 
-        // OTP verified — go to onboarding
         router.replace("/onboarding");
     };
 
@@ -180,16 +176,21 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     otpBox: {
+        // Fixed: use explicit width/height instead of aspectRatio
+        // to prevent text clipping on Android
         flex: 1,
-        aspectRatio: 1,
+        height: 52,
         backgroundColor: "#2a2a2a",
         borderRadius: 12,
         borderWidth: 1,
         borderColor: "#333",
         color: "#fff",
-        fontSize: 22,
+        fontSize: 20,
         fontWeight: "700",
         textAlign: "center",
+        // Explicit vertical padding reset so text isn't pushed out of bounds
+        paddingVertical: 0,
+        includeFontPadding: false,  // Android: removes extra space above/below text
     },
     otpBoxFilled: {
         borderColor: "#22c55e",

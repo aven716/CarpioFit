@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useState } from "react";
 import {
     Alert,
+    Image,
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
@@ -33,7 +34,6 @@ export default function Login() {
             return;
         }
 
-        // Navigate to home
         router.replace("/tabs");
     };
 
@@ -48,10 +48,16 @@ export default function Login() {
                 {/* Logo / Title */}
                 <View style={styles.topSection}>
                     <View style={styles.logoCircle}>
-                        <Text style={styles.logoEmoji}>🏋️</Text>
+                        <Image
+                            // Place your logo file at assets/images/logo.png
+                            // and update the path below if it differs
+                            source={require("../../assets/CarpioFitLogo.png")}
+                            style={styles.logoImage}
+                            resizeMode="contain"
+                        />
                     </View>
                     <Text style={styles.appName}>CarpioFit</Text>
-                    <Text style={styles.tagline}>Welcome back! Ready to crush it? BAGO TO AHHAHHAHA</Text>
+                    <Text style={styles.tagline}>Welcome back! Ready to crush it?</Text>
                 </View>
 
                 {/* Card */}
@@ -123,8 +129,12 @@ const styles = StyleSheet.create({
         borderWidth: 2, borderColor: "rgba(34,197,94,0.25)",
         alignItems: "center", justifyContent: "center",
         marginBottom: 4,
+        overflow: "hidden",
     },
-    logoEmoji: { fontSize: 36 },
+    logoImage: {
+        width: 52,
+        height: 52,
+    },
     appName: { color: "#fff", fontSize: 28, fontWeight: "800", letterSpacing: 0.5 },
     tagline: { color: "#888", fontSize: 14 },
 

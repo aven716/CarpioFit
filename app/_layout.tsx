@@ -2,11 +2,12 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState } from "react";
 import { View } from "react-native";
+import { AppProvider } from "..//lib/context/AppContext";
 import { supabase } from "../lib/supabase";
 
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
+function RootLayoutInner() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState<boolean | null>(null);
@@ -83,9 +84,19 @@ export default function RootLayout() {
     }
   }, [loading, session, hasProfile]);
 
+  // Show blank screen while loading — Stack is NOT rendered yet
   if (loading || (session && hasProfile === null)) {
     return <View style={{ flex: 1, backgroundColor: "#0a0a0a" }} />;
   }
 
   return <Stack screenOptions={{ headerShown: false }} />;
+}
+
+// ← Single AppProvider, never unmounts
+export default function RootLayout() {
+  return (
+    <AppProvider>
+      <RootLayoutInner />
+    </AppProvider>
+  );
 }
