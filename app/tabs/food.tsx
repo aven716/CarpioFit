@@ -21,6 +21,7 @@ import {
     Alert,
     Dimensions,
     FlatList,
+    KeyboardAvoidingView,
     Modal,
     Platform,
     ScrollView,
@@ -259,7 +260,6 @@ function EditFoodModal({
     const [quantity, setQuantity] = useState("1");
     const [saving, setSaving] = useState(false);
 
-    // Base per-serving values (item values / original quantity)
     const base = item ? {
         calories: item.calories / (item.quantity || 1),
         protein: item.protein / (item.quantity || 1),
@@ -305,72 +305,74 @@ function EditFoodModal({
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-            <View style={s.modalOverlay}>
-                <View style={s.modalContent}>
-                    <View style={s.modalHeader}>
-                        <TouchableOpacity onPress={onClose}><X size={22} color="#888" /></TouchableOpacity>
-                        <Text style={s.modalTitle} numberOfLines={1}>{item.name}</Text>
-                        <View style={{ width: 22 }} />
-                    </View>
-
-                    {/* Live calorie preview */}
-                    <View style={[s.calorieHighlight, { backgroundColor: `${mealColor}18` }]}>
-                        <Text style={[s.calorieHighlightNumber, { color: mealColor }]}>{adjusted.calories}</Text>
-                        <Text style={s.calorieHighlightLabel}>kcal</Text>
-                    </View>
-
-                    {/* Macro grid */}
-                    <View style={s.nutritionGrid}>
-                        {[
-                            { label: "Protein", value: adjusted.protein, color: "#f97316" },
-                            { label: "Carbs", value: adjusted.carbs, color: "#3b82f6" },
-                            { label: "Fat", value: adjusted.fat, color: "#a855f7" },
-                        ].map((n) => (
-                            <View key={n.label} style={s.nutritionCard}>
-                                <Text style={[s.nutritionValue, { color: n.color }]}>{n.value}g</Text>
-                                <Text style={s.nutritionLabel}>{n.label}</Text>
-                            </View>
-                        ))}
-                    </View>
-
-                    {/* Quantity */}
-                    <View style={s.quantitySection}>
-                        <Text style={s.modalLabel}>Servings</Text>
-                        <View style={s.quantityRow}>
-                            <TouchableOpacity
-                                style={s.quantityBtn}
-                                onPress={() => setQuantity((p) => Math.max(0.5, (parseFloat(p) || 1) - 0.5).toString())}
-                            >
-                                <Text style={s.quantityBtnText}>−</Text>
-                            </TouchableOpacity>
-                            <TextInput
-                                value={quantity}
-                                onChangeText={setQuantity}
-                                keyboardType="decimal-pad"
-                                style={s.quantityInput}
-                                selectTextOnFocus
-                            />
-                            <TouchableOpacity
-                                style={s.quantityBtn}
-                                onPress={() => setQuantity((p) => ((parseFloat(p) || 1) + 0.5).toString())}
-                            >
-                                <Text style={s.quantityBtnText}>+</Text>
-                            </TouchableOpacity>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+            >
+                <View style={s.modalOverlay}>
+                    <View style={s.modalContent}>
+                        <View style={s.modalHeader}>
+                            <TouchableOpacity onPress={onClose}><X size={22} color="#888" /></TouchableOpacity>
+                            <Text style={s.modalTitle} numberOfLines={1}>{item.name}</Text>
+                            <View style={{ width: 22 }} />
                         </View>
-                    </View>
 
-                    <TouchableOpacity
-                        style={[s.logBtn, { backgroundColor: mealColor }, saving && { opacity: 0.6 }]}
-                        onPress={handleSave}
-                        disabled={saving}
-                    >
-                        {saving
-                            ? <ActivityIndicator size="small" color="#fff" />
-                            : <Text style={[s.logBtnText, { color: "#fff" }]}>Save Changes</Text>
-                        }
-                    </TouchableOpacity>
+                        <View style={[s.calorieHighlight, { backgroundColor: `${mealColor}18` }]}>
+                            <Text style={[s.calorieHighlightNumber, { color: mealColor }]}>{adjusted.calories}</Text>
+                            <Text style={s.calorieHighlightLabel}>kcal</Text>
+                        </View>
+
+                        <View style={s.nutritionGrid}>
+                            {[
+                                { label: "Protein", value: adjusted.protein, color: "#f97316" },
+                                { label: "Carbs", value: adjusted.carbs, color: "#3b82f6" },
+                                { label: "Fat", value: adjusted.fat, color: "#a855f7" },
+                            ].map((n) => (
+                                <View key={n.label} style={s.nutritionCard}>
+                                    <Text style={[s.nutritionValue, { color: n.color }]}>{n.value}g</Text>
+                                    <Text style={s.nutritionLabel}>{n.label}</Text>
+                                </View>
+                            ))}
+                        </View>
+
+                        <View style={s.quantitySection}>
+                            <Text style={s.modalLabel}>Servings</Text>
+                            <View style={s.quantityRow}>
+                                <TouchableOpacity
+                                    style={s.quantityBtn}
+                                    onPress={() => setQuantity((p) => Math.max(0.5, (parseFloat(p) || 1) - 0.5).toString())}
+                                >
+                                    <Text style={s.quantityBtnText}>−</Text>
+                                </TouchableOpacity>
+                                <TextInput
+                                    value={quantity}
+                                    onChangeText={setQuantity}
+                                    keyboardType="decimal-pad"
+                                    style={s.quantityInput}
+                                    selectTextOnFocus
+                                />
+                                <TouchableOpacity
+                                    style={s.quantityBtn}
+                                    onPress={() => setQuantity((p) => ((parseFloat(p) || 1) + 0.5).toString())}
+                                >
+                                    <Text style={s.quantityBtnText}>+</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+
+                        <TouchableOpacity
+                            style={[s.logBtn, { backgroundColor: mealColor }, saving && { opacity: 0.6 }]}
+                            onPress={handleSave}
+                            disabled={saving}
+                        >
+                            {saving
+                                ? <ActivityIndicator size="small" color="#fff" />
+                                : <Text style={[s.logBtnText, { color: "#fff" }]}>Save Changes</Text>
+                            }
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 }
@@ -544,7 +546,6 @@ export default function FoodLogging() {
         finally { setSaving(false); }
     };
 
-    // ─── Delete food log ──────────────────────
     const handleDeleteFood = (item: MealItem) => {
         const mt = mealTypes.find((m) => m.id === item.meal);
         Alert.alert(
@@ -571,7 +572,6 @@ export default function FoodLogging() {
         );
     };
 
-    // ─── Edit food log ────────────────────────
     const handleEditFood = (item: MealItem) => {
         setEditingItem(item);
         setEditModalVisible(true);
@@ -685,7 +685,6 @@ export default function FoodLogging() {
                                     </View>
                                     <View style={s.mealCardRight}>
                                         <Text style={[s.mealKcal, { color: mt.color }]}>{item.calories}</Text>
-                                        {/* ── Edit & Delete buttons ── */}
                                         <View style={s.mealActions}>
                                             <TouchableOpacity
                                                 style={s.mealActionBtn}
@@ -730,135 +729,146 @@ export default function FoodLogging() {
 
             {/* Search Modal */}
             <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
-                <View style={s.modalOverlay}>
-                    <View style={s.modalContent}>
-                        <View style={s.modalHeader}>
-                            <Text style={s.modalTitle}>Add Food Item</Text>
-                            <TouchableOpacity onPress={() => { setModalVisible(false); setSearchQuery(""); setSearchResults([]); }}>
-                                <X size={22} color="#888" />
-                            </TouchableOpacity>
-                        </View>
-
-                        <Text style={s.modalLabel}>Meal Type</Text>
-                        <View style={s.mealTypeGrid}>
-                            {mealTypes.map((type) => (
-                                <TouchableOpacity
-                                    key={type.id}
-                                    style={[s.mealTypeBtn, selectedMeal === type.id && { backgroundColor: type.tint, borderColor: type.color }]}
-                                    onPress={() => setSelectedMeal(type.id)}
-                                >
-                                    <Text style={[s.mealTypeBtnText, selectedMeal === type.id && { color: type.color, fontWeight: "700" }]}>
-                                        {type.name}
-                                    </Text>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={{ flex: 1 }}
+                >
+                    <View style={s.modalOverlay}>
+                        <View style={s.modalContent}>
+                            <View style={s.modalHeader}>
+                                <Text style={s.modalTitle}>Add Food Item</Text>
+                                <TouchableOpacity onPress={() => { setModalVisible(false); setSearchQuery(""); setSearchResults([]); }}>
+                                    <X size={22} color="#888" />
                                 </TouchableOpacity>
-                            ))}
-                        </View>
+                            </View>
 
-                        <Text style={s.modalLabel}>Search Foods</Text>
-                        <View style={s.searchContainer}>
-                            <Search size={16} color="#888" />
-                            <TextInput
-                                placeholder="Search for foods..."
-                                placeholderTextColor="#555"
-                                value={searchQuery}
-                                onChangeText={setSearchQuery}
-                                style={s.searchInput}
-                                autoFocus
-                            />
-                            {searching && <ActivityIndicator size="small" color="#22c55e" />}
-                        </View>
-
-                        {searchQuery.length < 2 ? (
-                            <View style={s.searchHint}><Text style={s.searchHintText}>Type at least 2 characters</Text></View>
-                        ) : (
-                            <FlatList
-                                data={searchResults}
-                                keyExtractor={(item, i) => `${item.foodId}-${i}`}
-                                style={s.foodList}
-                                renderItem={({ item }) => (
-                                    <TouchableOpacity style={s.foodItem} onPress={() => openFoodDetail(item)}>
-                                        <View style={s.foodItemLeft}>
-                                            <Text style={s.foodName}>{item.label}</Text>
-                                            <Text style={s.foodMacros}>{item.calories} kcal • P:{item.protein}g C:{item.carbs}g F:{item.fat}g</Text>
-                                        </View>
-                                        <Plus size={18} color="#22c55e" />
+                            <Text style={s.modalLabel}>Meal Type</Text>
+                            <View style={s.mealTypeGrid}>
+                                {mealTypes.map((type) => (
+                                    <TouchableOpacity
+                                        key={type.id}
+                                        style={[s.mealTypeBtn, selectedMeal === type.id && { backgroundColor: type.tint, borderColor: type.color }]}
+                                        onPress={() => setSelectedMeal(type.id)}
+                                    >
+                                        <Text style={[s.mealTypeBtnText, selectedMeal === type.id && { color: type.color, fontWeight: "700" }]}>
+                                            {type.name}
+                                        </Text>
                                     </TouchableOpacity>
-                                )}
-                                ItemSeparatorComponent={() => <View style={s.separator} />}
-                                ListEmptyComponent={!searching ? <Text style={s.searchHintText}>No results</Text> : null}
-                            />
-                        )}
+                                ))}
+                            </View>
+
+                            <Text style={s.modalLabel}>Search Foods</Text>
+                            <View style={s.searchContainer}>
+                                <Search size={16} color="#888" />
+                                <TextInput
+                                    placeholder="Search for foods..."
+                                    placeholderTextColor="#555"
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    style={s.searchInput}
+                                    autoFocus
+                                />
+                                {searching && <ActivityIndicator size="small" color="#22c55e" />}
+                            </View>
+
+                            {searchQuery.length < 2 ? (
+                                <View style={s.searchHint}><Text style={s.searchHintText}>Type at least 2 characters</Text></View>
+                            ) : (
+                                <FlatList
+                                    data={searchResults}
+                                    keyExtractor={(item, i) => `${item.foodId}-${i}`}
+                                    style={s.foodList}
+                                    keyboardShouldPersistTaps="handled"
+                                    renderItem={({ item }) => (
+                                        <TouchableOpacity style={s.foodItem} onPress={() => openFoodDetail(item)}>
+                                            <View style={s.foodItemLeft}>
+                                                <Text style={s.foodName}>{item.label}</Text>
+                                                <Text style={s.foodMacros}>{item.calories} kcal • P:{item.protein}g C:{item.carbs}g F:{item.fat}g</Text>
+                                            </View>
+                                            <Plus size={18} color="#22c55e" />
+                                        </TouchableOpacity>
+                                    )}
+                                    ItemSeparatorComponent={() => <View style={s.separator} />}
+                                    ListEmptyComponent={!searching ? <Text style={s.searchHintText}>No results</Text> : null}
+                                />
+                            )}
+                        </View>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
 
             {/* Detail Modal */}
             <Modal visible={detailModalVisible} animationType="slide" transparent onRequestClose={() => setDetailModalVisible(false)}>
-                <View style={s.modalOverlay}>
-                    <View style={s.modalContent}>
-                        <View style={s.modalHeader}>
-                            <TouchableOpacity onPress={() => setDetailModalVisible(false)}>
-                                <X size={22} color="#888" />
-                            </TouchableOpacity>
-                            <Text style={s.modalTitle}>{selectedFood?.label}</Text>
-                            <View style={{ width: 22 }} />
-                        </View>
-
-                        <View style={s.calorieHighlight}>
-                            <Text style={s.calorieHighlightNumber}>{adj?.calories}</Text>
-                            <Text style={s.calorieHighlightLabel}>kcal per serving</Text>
-                        </View>
-
-                        <View style={s.nutritionGrid}>
-                            {[
-                                { label: "Protein", value: adj?.protein, color: "#f97316" },
-                                { label: "Carbs", value: adj?.carbs, color: "#3b82f6" },
-                                { label: "Fat", value: adj?.fat, color: "#a855f7" },
-                                { label: "Fiber", value: adj?.fiber, color: "#22c55e" },
-                            ].map((n) => (
-                                <View key={n.label} style={s.nutritionCard}>
-                                    <Text style={[s.nutritionValue, { color: n.color }]}>{n.value}g</Text>
-                                    <Text style={s.nutritionLabel}>{n.label}</Text>
-                                </View>
-                            ))}
-                        </View>
-
-                        <View style={s.quantitySection}>
-                            <Text style={s.modalLabel}>Servings</Text>
-                            <View style={s.quantityRow}>
-                                <TouchableOpacity style={s.quantityBtn} onPress={() => setQuantity((p) => Math.max(0.5, (parseFloat(p) || 1) - 0.5).toString())}>
-                                    <Text style={s.quantityBtnText}>−</Text>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={{ flex: 1 }}
+                >
+                    <View style={s.modalOverlay}>
+                        <View style={s.modalContent}>
+                            <View style={s.modalHeader}>
+                                <TouchableOpacity onPress={() => setDetailModalVisible(false)}>
+                                    <X size={22} color="#888" />
                                 </TouchableOpacity>
-                                <TextInput value={quantity} onChangeText={setQuantity} keyboardType="decimal-pad" style={s.quantityInput} selectTextOnFocus />
-                                <TouchableOpacity style={s.quantityBtn} onPress={() => setQuantity((p) => ((parseFloat(p) || 1) + 0.5).toString())}>
-                                    <Text style={s.quantityBtnText}>+</Text>
-                                </TouchableOpacity>
+                                <Text style={s.modalTitle}>{selectedFood?.label}</Text>
+                                <View style={{ width: 22 }} />
                             </View>
-                        </View>
 
-                        <Text style={s.modalLabel}>Add to</Text>
-                        <View style={s.mealTypeGrid}>
-                            {mealTypes.map((type) => (
-                                <TouchableOpacity
-                                    key={type.id}
-                                    style={[s.mealTypeBtn, selectedMeal === type.id && { backgroundColor: type.tint, borderColor: type.color }]}
-                                    onPress={() => setSelectedMeal(type.id)}
-                                >
-                                    <Text style={[s.mealTypeBtnText, selectedMeal === type.id && { color: type.color, fontWeight: "700" }]}>
-                                        {type.name}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
+                            <View style={s.calorieHighlight}>
+                                <Text style={s.calorieHighlightNumber}>{adj?.calories}</Text>
+                                <Text style={s.calorieHighlightLabel}>kcal per serving</Text>
+                            </View>
 
-                        <TouchableOpacity style={[s.logBtn, saving && { opacity: 0.6 }]} onPress={addFood} disabled={saving}>
-                            {saving
-                                ? <ActivityIndicator size="small" color="#0a0a0a" />
-                                : <Text style={s.logBtnText}>Log {adj?.calories} kcal to {mealTypes.find((m) => m.id === selectedMeal)?.name}</Text>
-                            }
-                        </TouchableOpacity>
+                            <View style={s.nutritionGrid}>
+                                {[
+                                    { label: "Protein", value: adj?.protein, color: "#f97316" },
+                                    { label: "Carbs", value: adj?.carbs, color: "#3b82f6" },
+                                    { label: "Fat", value: adj?.fat, color: "#a855f7" },
+                                    { label: "Fiber", value: adj?.fiber, color: "#22c55e" },
+                                ].map((n) => (
+                                    <View key={n.label} style={s.nutritionCard}>
+                                        <Text style={[s.nutritionValue, { color: n.color }]}>{n.value}g</Text>
+                                        <Text style={s.nutritionLabel}>{n.label}</Text>
+                                    </View>
+                                ))}
+                            </View>
+
+                            <View style={s.quantitySection}>
+                                <Text style={s.modalLabel}>Servings</Text>
+                                <View style={s.quantityRow}>
+                                    <TouchableOpacity style={s.quantityBtn} onPress={() => setQuantity((p) => Math.max(0.5, (parseFloat(p) || 1) - 0.5).toString())}>
+                                        <Text style={s.quantityBtnText}>−</Text>
+                                    </TouchableOpacity>
+                                    <TextInput value={quantity} onChangeText={setQuantity} keyboardType="decimal-pad" style={s.quantityInput} selectTextOnFocus />
+                                    <TouchableOpacity style={s.quantityBtn} onPress={() => setQuantity((p) => ((parseFloat(p) || 1) + 0.5).toString())}>
+                                        <Text style={s.quantityBtnText}>+</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+
+                            <Text style={s.modalLabel}>Add to</Text>
+                            <View style={s.mealTypeGrid}>
+                                {mealTypes.map((type) => (
+                                    <TouchableOpacity
+                                        key={type.id}
+                                        style={[s.mealTypeBtn, selectedMeal === type.id && { backgroundColor: type.tint, borderColor: type.color }]}
+                                        onPress={() => setSelectedMeal(type.id)}
+                                    >
+                                        <Text style={[s.mealTypeBtnText, selectedMeal === type.id && { color: type.color, fontWeight: "700" }]}>
+                                            {type.name}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            <TouchableOpacity style={[s.logBtn, saving && { opacity: 0.6 }]} onPress={addFood} disabled={saving}>
+                                {saving
+                                    ? <ActivityIndicator size="small" color="#0a0a0a" />
+                                    : <Text style={s.logBtnText}>Log {adj?.calories} kcal to {mealTypes.find((m) => m.id === selectedMeal)?.name}</Text>
+                                }
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
 
             {/* Edit Modal */}

@@ -230,7 +230,7 @@ function RestTimer({ seconds, onDone }: { seconds: number; onDone: () => void })
 
     return (
         <View style={ws.restTimerBox}>
-            <Text style={ws.restTimerTitle}>😮‍💨 Rest Time</Text>
+            <Text style={ws.restTimerTitle}>Rest Time</Text>
             <Text style={ws.restTimerCount}>{remaining}s</Text>
             <View style={ws.restTimerTrack}>
                 <Animated.View style={[ws.restTimerFill, { width: barWidth }]} />
@@ -383,7 +383,7 @@ function CardioTracker({
     if (locationPermission === "denied") {
         return (
             <View style={ct.permissionBox}>
-                <Text style={ct.permissionEmoji}>📍</Text>
+                <Text style={ct.permissionEmoji}></Text>
                 <Text style={ct.permissionTitle}>Location Required</Text>
                 <Text style={ct.permissionSub}>
                     CarpioFit needs location access to track your route and distance. Please enable it in Settings.

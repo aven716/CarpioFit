@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import {
     Alert,
     Dimensions,
+    KeyboardAvoidingView,
     Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -193,79 +195,83 @@ function SharePlanModal({
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-            <View style={shareStyles.overlay}>
-                <ScrollView
-                    style={{ width: "100%" }}
-                    contentContainerStyle={shareStyles.sheet}
-                    keyboardShouldPersistTaps="handled"
-                >
-                    <View style={shareStyles.header}>
-                        <Text style={shareStyles.title}>Share Weekly Plan</Text>
-                        <TouchableOpacity onPress={onClose}>
-                            <X size={20} color="#888" />
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Plan preview */}
-                    <View style={shareStyles.planPreview}>
-                        <Text style={shareStyles.planPreviewTitle}>📋 Plan Preview</Text>
-                        {plan?.weekPlan.map((day, i) => (
-                            <View key={i} style={shareStyles.planPreviewRow}>
-                                <Text style={shareStyles.planPreviewDay}>{day.day.slice(0, 3)}</Text>
-                                <Text style={shareStyles.planPreviewFocus} numberOfLines={1}>
-                                    {day.isRest ? "😴 Rest" : `💪 ${day.focus}`}
-                                </Text>
-                                {!day.isRest && (
-                                    <Text style={shareStyles.planPreviewCount}>{day.exercises?.length ?? 0} ex</Text>
-                                )}
-                            </View>
-                        ))}
-                    </View>
-
-                    <Text style={shareStyles.label}>Post Title *</Text>
-                    <TextInput
-                        style={shareStyles.input}
-                        value={title}
-                        onChangeText={setTitle}
-                        placeholder="e.g., Check out my weekly plan!"
-                        placeholderTextColor="#555"
-                    />
-
-                    <Text style={shareStyles.label}>Category</Text>
-                    <View style={shareStyles.catRow}>
-                        {CATEGORIES.map((cat) => (
-                            <TouchableOpacity
-                                key={cat}
-                                style={[shareStyles.catBtn, category === cat && shareStyles.catBtnActive]}
-                                onPress={() => setCategory(cat)}
-                            >
-                                <Text style={[shareStyles.catBtnText, category === cat && shareStyles.catBtnTextActive]}>
-                                    {cat}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-
-                    <Text style={shareStyles.label}>Add a note <Text style={{ fontWeight: "400", color: "#555" }}>(optional)</Text></Text>
-                    <TextInput
-                        style={[shareStyles.input, { minHeight: 80, textAlignVertical: "top" }]}
-                        value={extraNote}
-                        onChangeText={setExtraNote}
-                        placeholder="e.g., Loving this plan — week 2 in!"
-                        placeholderTextColor="#555"
-                        multiline
-                    />
-
-                    <TouchableOpacity
-                        style={[shareStyles.shareBtn, submitting && { opacity: 0.6 }]}
-                        onPress={handleShare}
-                        disabled={submitting}
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+            >
+                <View style={shareStyles.overlay}>
+                    <ScrollView
+                        style={{ width: "100%" }}
+                        contentContainerStyle={shareStyles.sheet}
+                        keyboardShouldPersistTaps="handled"
                     >
-                        <Share2 size={16} color="#fff" />
-                        <Text style={shareStyles.shareBtnText}>{submitting ? "Sharing..." : "Share Plan"}</Text>
-                    </TouchableOpacity>
-                </ScrollView>
-            </View>
+                        <View style={shareStyles.header}>
+                            <Text style={shareStyles.title}>Share Weekly Plan</Text>
+                            <TouchableOpacity onPress={onClose}>
+                                <X size={20} color="#888" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={shareStyles.planPreview}>
+                            <Text style={shareStyles.planPreviewTitle}>📋 Plan Preview</Text>
+                            {plan?.weekPlan.map((day, i) => (
+                                <View key={i} style={shareStyles.planPreviewRow}>
+                                    <Text style={shareStyles.planPreviewDay}>{day.day.slice(0, 3)}</Text>
+                                    <Text style={shareStyles.planPreviewFocus} numberOfLines={1}>
+                                        {day.isRest ? "😴 Rest" : `💪 ${day.focus}`}
+                                    </Text>
+                                    {!day.isRest && (
+                                        <Text style={shareStyles.planPreviewCount}>{day.exercises?.length ?? 0} ex</Text>
+                                    )}
+                                </View>
+                            ))}
+                        </View>
+
+                        <Text style={shareStyles.label}>Post Title *</Text>
+                        <TextInput
+                            style={shareStyles.input}
+                            value={title}
+                            onChangeText={setTitle}
+                            placeholder="e.g., Check out my weekly plan!"
+                            placeholderTextColor="#555"
+                        />
+
+                        <Text style={shareStyles.label}>Category</Text>
+                        <View style={shareStyles.catRow}>
+                            {CATEGORIES.map((cat) => (
+                                <TouchableOpacity
+                                    key={cat}
+                                    style={[shareStyles.catBtn, category === cat && shareStyles.catBtnActive]}
+                                    onPress={() => setCategory(cat)}
+                                >
+                                    <Text style={[shareStyles.catBtnText, category === cat && shareStyles.catBtnTextActive]}>
+                                        {cat}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <Text style={shareStyles.label}>Add a note <Text style={{ fontWeight: "400", color: "#555" }}>(optional)</Text></Text>
+                        <TextInput
+                            style={[shareStyles.input, { minHeight: 80, textAlignVertical: "top" }]}
+                            value={extraNote}
+                            onChangeText={setExtraNote}
+                            placeholder="e.g., Loving this plan — week 2 in!"
+                            placeholderTextColor="#555"
+                            multiline
+                        />
+
+                        <TouchableOpacity
+                            style={[shareStyles.shareBtn, submitting && { opacity: 0.6 }]}
+                            onPress={handleShare}
+                            disabled={submitting}
+                        >
+                            <Share2 size={16} color="#fff" />
+                            <Text style={shareStyles.shareBtnText}>{submitting ? "Sharing..." : "Share Plan"}</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                </View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 }
@@ -433,32 +439,37 @@ function ExerciseEditModal({
 
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-            <View style={es.overlay}>
-                <View style={es.sheet}>
-                    <View style={es.sheetHeader}>
-                        <Text style={es.sheetTitle}>{exercise?.name ? "Edit Exercise" : "Add Exercise"}</Text>
-                        <TouchableOpacity onPress={onClose}><X size={20} color="#888" /></TouchableOpacity>
-                    </View>
-                    <Text style={es.label}>Exercise Name *</Text>
-                    <TextInput style={es.input} value={name} onChangeText={setName} placeholder="e.g., Push-ups" placeholderTextColor="#555" />
-                    <View style={{ flexDirection: "row", gap: 10 }}>
-                        <View style={{ flex: 1 }}>
-                            <Text style={es.label}>Sets</Text>
-                            <TextInput style={es.input} value={sets} onChangeText={setSets} placeholder="3" placeholderTextColor="#555" keyboardType="numeric" />
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : "height"}
+                style={{ flex: 1 }}
+            >
+                <View style={es.overlay}>
+                    <View style={es.sheet}>
+                        <View style={es.sheetHeader}>
+                            <Text style={es.sheetTitle}>{exercise?.name ? "Edit Exercise" : "Add Exercise"}</Text>
+                            <TouchableOpacity onPress={onClose}><X size={20} color="#888" /></TouchableOpacity>
                         </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={es.label}>Reps</Text>
-                            <TextInput style={es.input} value={reps} onChangeText={setReps} placeholder="12-15" placeholderTextColor="#555" />
+                        <Text style={es.label}>Exercise Name *</Text>
+                        <TextInput style={es.input} value={name} onChangeText={setName} placeholder="e.g., Push-ups" placeholderTextColor="#555" />
+                        <View style={{ flexDirection: "row", gap: 10 }}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={es.label}>Sets</Text>
+                                <TextInput style={es.input} value={sets} onChangeText={setSets} placeholder="3" placeholderTextColor="#555" keyboardType="numeric" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={es.label}>Reps</Text>
+                                <TextInput style={es.input} value={reps} onChangeText={setReps} placeholder="12-15" placeholderTextColor="#555" />
+                            </View>
                         </View>
+                        <Text style={es.label}>Duration (optional)</Text>
+                        <TextInput style={es.input} value={duration} onChangeText={setDuration} placeholder="e.g., 20 min" placeholderTextColor="#555" />
+                        <TouchableOpacity style={es.saveBtn} onPress={handleSave}>
+                            <Save size={16} color="#fff" />
+                            <Text style={es.saveBtnText}>Save Exercise</Text>
+                        </TouchableOpacity>
                     </View>
-                    <Text style={es.label}>Duration (optional)</Text>
-                    <TextInput style={es.input} value={duration} onChangeText={setDuration} placeholder="e.g., 20 min" placeholderTextColor="#555" />
-                    <TouchableOpacity style={es.saveBtn} onPress={handleSave}>
-                        <Save size={16} color="#fff" />
-                        <Text style={es.saveBtnText}>Save Exercise</Text>
-                    </TouchableOpacity>
                 </View>
-            </View>
+            </KeyboardAvoidingView>
         </Modal>
     );
 }
@@ -782,13 +793,12 @@ function AIPlanSection({
 
     return (
         <View style={ps.wrap}>
-            {/* Header */}
             <View style={ps.header}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text style={ps.headerEmoji}>🤖</Text>
+                    <Text style={ps.headerEmoji}></Text>
                     <View>
                         <Text style={ps.title}>Bernard's Weekly Plan</Text>
-                        <Text style={ps.subtitle}>Tap a day to expand • ✏️ to edit</Text>
+                        <Text style={ps.subtitle}>Tap a day to expand and edit</Text>
                     </View>
                 </View>
                 <TouchableOpacity
@@ -801,7 +811,6 @@ function AIPlanSection({
                 </TouchableOpacity>
             </View>
 
-            {/* Action buttons row */}
             {!loading && !regenerating && plan && (
                 <View style={ps.actionRow}>
                     <TouchableOpacity
@@ -813,7 +822,6 @@ function AIPlanSection({
                         <Text style={ps.logWeekBtnText}>{loggingWeek ? "Logging..." : "Log Entire Week"}</Text>
                     </TouchableOpacity>
 
-                    {/* Share Plan button */}
                     <TouchableOpacity
                         style={ps.sharePlanBtn}
                         onPress={() => setSharePlanVisible(true)}
@@ -854,11 +862,10 @@ function AIPlanSection({
 
             <View style={ps.bernardHint}>
                 <Text style={ps.bernardHintText}>
-                    💬 Ask Bernard to adjust your plan, tap ✏️ to edit manually, or tap "Log" to track exercises.
+                    Ask Bernard to adjust your plan, tap and to edit manually, or tap "Log" to track exercises.
                 </Text>
             </View>
 
-            {/* Share Plan Modal */}
             <SharePlanModal
                 visible={sharePlanVisible}
                 plan={plan}
@@ -1084,47 +1091,55 @@ export default function ExerciseCalendar() {
 
             {/* Add Workout Modal */}
             <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <Text style={styles.modalTitle}>Add Workout</Text>
-                            <TouchableOpacity onPress={() => setModalVisible(false)}><X size={22} color="#888" /></TouchableOpacity>
-                        </View>
-                        <Text style={styles.inputLabel}>Date</Text>
-                        <View style={styles.dateDisplay}>
-                            <Text style={styles.dateDisplayText}>
-                                {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-                            </Text>
-                        </View>
-                        <Text style={styles.inputLabel}>Workout Name</Text>
-                        <TextInput placeholder="e.g., Morning Run" placeholderTextColor="#555" value={newWorkout.name} onChangeText={(v) => setNewWorkout({ ...newWorkout, name: v })} style={styles.input} />
-                        <Text style={styles.inputLabel}>Type</Text>
-                        <View style={styles.typeGrid}>
-                            {WORKOUT_TYPES.map((type) => {
-                                const cfg = workoutTypeConfig[type];
-                                const isActive = newWorkout.type === type;
-                                return (
-                                    <TouchableOpacity key={type} style={[styles.typeBtn, isActive && { backgroundColor: cfg.tint, borderColor: cfg.color }]} onPress={() => setNewWorkout({ ...newWorkout, type })}>
-                                        <Text style={[styles.typeBtnText, isActive && { color: cfg.color, fontWeight: "700" }]}>{cfg.label}</Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                        </View>
-                        <View style={styles.row}>
-                            <View style={{ flex: 1, marginRight: 8 }}>
-                                <Text style={styles.inputLabel}>Duration (min)</Text>
-                                <TextInput placeholder="30" placeholderTextColor="#555" keyboardType="numeric" value={newWorkout.duration} onChangeText={(v) => setNewWorkout({ ...newWorkout, duration: v })} style={styles.input} />
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={{ flex: 1 }}
+                >
+                    <View style={styles.modalOverlay}>
+                        <ScrollView
+                            contentContainerStyle={styles.modalContent}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Add Workout</Text>
+                                <TouchableOpacity onPress={() => setModalVisible(false)}><X size={22} color="#888" /></TouchableOpacity>
                             </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.inputLabel}>Time (HH:MM)</Text>
-                                <TextInput placeholder="07:00" placeholderTextColor="#555" value={newWorkout.time} onChangeText={(v) => setNewWorkout({ ...newWorkout, time: v })} style={styles.input} />
+                            <Text style={styles.inputLabel}>Date</Text>
+                            <View style={styles.dateDisplay}>
+                                <Text style={styles.dateDisplayText}>
+                                    {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                                </Text>
                             </View>
-                        </View>
-                        <TouchableOpacity style={styles.submitBtn} onPress={addWorkout}>
-                            <Text style={styles.submitBtnText}>Add Workout</Text>
-                        </TouchableOpacity>
+                            <Text style={styles.inputLabel}>Workout Name</Text>
+                            <TextInput placeholder="e.g., Morning Run" placeholderTextColor="#555" value={newWorkout.name} onChangeText={(v) => setNewWorkout({ ...newWorkout, name: v })} style={styles.input} />
+                            <Text style={styles.inputLabel}>Type</Text>
+                            <View style={styles.typeGrid}>
+                                {WORKOUT_TYPES.map((type) => {
+                                    const cfg = workoutTypeConfig[type];
+                                    const isActive = newWorkout.type === type;
+                                    return (
+                                        <TouchableOpacity key={type} style={[styles.typeBtn, isActive && { backgroundColor: cfg.tint, borderColor: cfg.color }]} onPress={() => setNewWorkout({ ...newWorkout, type })}>
+                                            <Text style={[styles.typeBtnText, isActive && { color: cfg.color, fontWeight: "700" }]}>{cfg.label}</Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                            <View style={styles.row}>
+                                <View style={{ flex: 1, marginRight: 8 }}>
+                                    <Text style={styles.inputLabel}>Duration (min)</Text>
+                                    <TextInput placeholder="30" placeholderTextColor="#555" keyboardType="numeric" value={newWorkout.duration} onChangeText={(v) => setNewWorkout({ ...newWorkout, duration: v })} style={styles.input} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.inputLabel}>Time (HH:MM)</Text>
+                                    <TextInput placeholder="07:00" placeholderTextColor="#555" value={newWorkout.time} onChangeText={(v) => setNewWorkout({ ...newWorkout, time: v })} style={styles.input} />
+                                </View>
+                            </View>
+                            <TouchableOpacity style={styles.submitBtn} onPress={addWorkout}>
+                                <Text style={styles.submitBtnText}>Add Workout</Text>
+                            </TouchableOpacity>
+                        </ScrollView>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </View>
     );
@@ -1145,7 +1160,6 @@ const shareStyles = StyleSheet.create({
     catBtnTextActive: { color: "#22c55e", fontWeight: "700" },
     shareBtn: { backgroundColor: "#22c55e", borderRadius: 14, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 4 },
     shareBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
-    // Plan preview inside share modal
     planPreview: { backgroundColor: "#111", borderRadius: 14, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: "#2a2a2a", gap: 6 },
     planPreviewTitle: { color: "#888", fontSize: 12, fontWeight: "600", marginBottom: 4 },
     planPreviewRow: { flexDirection: "row", alignItems: "center", gap: 8 },
@@ -1175,14 +1189,11 @@ const ps = StyleSheet.create({
     subtitle: { color: "#555", fontSize: 12, marginTop: 2 },
     regenBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(34,197,94,0.1)", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" },
     regenBtnText: { color: "#22c55e", fontSize: 12, fontWeight: "600" },
-
-    // Updated: action row with log week + share side by side
     actionRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
     logWeekBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "rgba(34,197,94,0.08)", borderRadius: 12, paddingVertical: 12, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" },
     logWeekBtnText: { color: "#22c55e", fontSize: 13, fontWeight: "700" },
     sharePlanBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "rgba(59,130,246,0.08)", borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: "rgba(59,130,246,0.2)" },
     sharePlanBtnText: { color: "#3b82f6", fontSize: 13, fontWeight: "700" },
-
     unsavedBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(249,115,22,0.1)", borderRadius: 10, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: "rgba(249,115,22,0.2)" },
     unsavedBannerText: { color: "#f97316", fontSize: 13, fontWeight: "600", flex: 1 },
     loadingBox: { backgroundColor: "#1a1a1a", borderRadius: 12, padding: 20, alignItems: "center" },

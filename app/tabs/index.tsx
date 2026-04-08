@@ -1,11 +1,13 @@
 import { useNavigation } from "@react-navigation/native";
 import { StatusBar } from 'expo-status-bar';
-import { Activity, ChevronDown, ChevronRight, ChevronUp, Flame, Plus, Target } from "lucide-react-native";
+import { Activity, Apple, ChevronDown, ChevronRight, ChevronUp, Flame, Footprints, Plus, Target } from "lucide-react-native";
 import { useContext, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -78,7 +80,7 @@ function ProgressBar({
 function FootprintsIcon({ color }: { color: string }) {
   return (
     <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
-      <Text style={{ fontSize: 16 }}>👣</Text>
+      <Text style={{ fontSize: 16 }}><Footprints /></Text>
     </View>
   );
 }
@@ -86,7 +88,7 @@ function FootprintsIcon({ color }: { color: string }) {
 function AppleIcon({ color }: { color: string }) {
   return (
     <View style={{ width: 20, height: 20, alignItems: "center", justifyContent: "center" }}>
-      <Text style={{ fontSize: 16 }}>🍎</Text>
+      <Text style={{ fontSize: 16, color:"white" }}><Apple /></Text>
     </View>
   );
 }
@@ -191,7 +193,7 @@ function CompactPlanCard({ plan, onViewFull }: { plan: WorkoutPlan | null; onVie
     return (
       <View style={styles.planCard}>
         <View style={styles.planCardHeader}>
-          <Text style={styles.planCardTitle}>📋 Your Weekly Plan</Text>
+          <Text style={styles.planCardTitle}>Your Weekly Plan</Text>
           <TouchableOpacity onPress={onViewFull}>
             <Text style={styles.viewFullBtn}>View Full</Text>
           </TouchableOpacity>
@@ -206,7 +208,7 @@ function CompactPlanCard({ plan, onViewFull }: { plan: WorkoutPlan | null; onVie
   return (
     <View style={styles.planCard}>
       <View style={styles.planCardHeader}>
-        <Text style={styles.planCardTitle}>📋 Your Weekly Plan</Text>
+        <Text style={styles.planCardTitle}>Your Weekly Plan</Text>
         <TouchableOpacity style={styles.viewFullRow} onPress={onViewFull}>
           <Text style={styles.viewFullBtn}>Full Plan</Text>
           <ChevronRight size={14} color="#22c55e" />
@@ -487,48 +489,51 @@ function WeightGoalCard({
 
       {/* Log Weight Modal */}
       <Modal visible={logModalVisible} transparent animationType="slide" onRequestClose={() => setLogModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Log Weight</Text>
-              <TouchableOpacity onPress={() => setLogModalVisible(false)}>
-                <Text style={{ color: "#888", fontSize: 20 }}>✕</Text>
+        <KeyboardAvoidingView behavior={Platform.OS === "android" ? "padding" : "height"}
+          style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Log Weight</Text>
+                <TouchableOpacity onPress={() => setLogModalVisible(false)}>
+                  <Text style={{ color: "#888", fontSize: 20 }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalCurrentWeight}>
+                Current: {userData?.currentWeight ?? "--"} kg
+              </Text>
+
+              <Text style={styles.inputLabel}>New Weight (kg)</Text>
+              <TextInput
+                style={styles.input}
+                value={newWeight}
+                onChangeText={setNewWeight}
+                placeholder={userData?.currentWeight ?? "70.0"}
+                placeholderTextColor="#555"
+                keyboardType="decimal-pad"
+              />
+
+              <Text style={styles.inputLabel}>Notes (optional)</Text>
+              <TextInput
+                style={[styles.input, { minHeight: 70, textAlignVertical: "top" }]}
+                value={newNotes}
+                onChangeText={setNewNotes}
+                placeholder="e.g., After morning workout"
+                placeholderTextColor="#555"
+                multiline
+              />
+
+              <TouchableOpacity
+                style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
+                onPress={handleLogWeight}
+                disabled={submitting}
+              >
+                <Text style={styles.submitBtnText}>{submitting ? "Saving..." : "Save Weight"}</Text>
               </TouchableOpacity>
             </View>
-
-            <Text style={styles.modalCurrentWeight}>
-              Current: {userData?.currentWeight ?? "--"} kg
-            </Text>
-
-            <Text style={styles.inputLabel}>New Weight (kg)</Text>
-            <TextInput
-              style={styles.input}
-              value={newWeight}
-              onChangeText={setNewWeight}
-              placeholder={userData?.currentWeight ?? "70.0"}
-              placeholderTextColor="#555"
-              keyboardType="decimal-pad"
-            />
-
-            <Text style={styles.inputLabel}>Notes (optional)</Text>
-            <TextInput
-              style={[styles.input, { minHeight: 70, textAlignVertical: "top" }]}
-              value={newNotes}
-              onChangeText={setNewNotes}
-              placeholder="e.g., After morning workout"
-              placeholderTextColor="#555"
-              multiline
-            />
-
-            <TouchableOpacity
-              style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
-              onPress={handleLogWeight}
-              disabled={submitting}
-            >
-              <Text style={styles.submitBtnText}>{submitting ? "Saving..." : "Save Weight"}</Text>
-            </TouchableOpacity>
           </View>
-        </View>
+      </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -667,7 +672,7 @@ export default function Home() {
 
   const statsCards = [
     { icon: "flame", label: "Calories Burned", value: Math.round(effectiveCaloriesBurned).toString(), unit: "kcal", color: "#f97316" },
-    { icon: "footprints", label: "Steps Today", value: effectiveSteps.toLocaleString(), unit: "steps", color: "#22c55e" },
+    { icon: "Footprints", label: "Steps Today", value: effectiveSteps.toLocaleString(), unit: "steps", color: "#22c55e" },
     { icon: "activity", label: "Active Minutes", value: dailyStats.activeMinutes.toString(), unit: "min", color: "#3b82f6" },
   ];
 
@@ -676,7 +681,7 @@ export default function Home() {
       <StatusBar style="light" />
 
       <View style={styles.header}>
-        <Text style={styles.greeting}>Hey, {userData?.name || "there"}! 👋</Text>
+        <Text style={styles.greeting}>Hey, {userData?.name || "there"}! </Text>
         <Text style={styles.subGreeting}>Ready to crush your goals today?</Text>
       </View>
 
@@ -685,7 +690,7 @@ export default function Home() {
         <View style={styles.calorieCardHeader}>
           <View style={styles.calorieCardLeft}>
             <View style={styles.iconCircle}>
-              <AppleIcon color="#fff" />
+              <Apple color="coral" />
             </View>
             <View>
               <Text style={styles.calorieCardTitle}>Daily Calories</Text>
@@ -694,7 +699,7 @@ export default function Home() {
               </Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.logFoodBtn} onPress={() => navigation.navigate("Food")}>
+          <TouchableOpacity style={styles.logFoodBtn} onPress={() => navigation.navigate("food")}>
             <Plus size={14} color="#1a3329" />
             <Text style={styles.logFoodBtnText}>Log Food</Text>
           </TouchableOpacity>
@@ -747,7 +752,7 @@ export default function Home() {
         {statsCards.map((stat) => (
           <View key={stat.label} style={[styles.card, styles.statCard]}>
             {stat.icon === "flame" && <Flame size={20} color={stat.color} />}
-            {stat.icon === "footprints" && <FootprintsIcon color={stat.color} />}
+            {stat.icon === "Footprints" && <Footprints color={stat.color} />}
             {stat.icon === "activity" && <Activity size={20} color={stat.color} />}
             <Text style={styles.statValue}>{stat.value}</Text>
             <Text style={styles.statUnit}>{stat.unit}</Text>
@@ -757,7 +762,7 @@ export default function Home() {
       </View>
 
       {/* Weekly Plan Card */}
-      <CompactPlanCard plan={workoutPlan} onViewFull={() => navigation.navigate("Calendar")} />
+      <CompactPlanCard plan={workoutPlan} onViewFull={() => navigation.navigate("calendar")} />
 
       {/* Weight Goal Card */}
       <WeightGoalCard
@@ -773,7 +778,7 @@ export default function Home() {
       <View style={styles.workoutsSection}>
         <View style={styles.workoutsHeader}>
           <Text style={styles.sectionTitle}>Today's Workouts</Text>
-          <TouchableOpacity onPress={() => navigation.navigate("Calendar")}>
+          <TouchableOpacity onPress={() => navigation.navigate("calendar")}>
             <Text style={styles.viewAllBtn}>View All</Text>
           </TouchableOpacity>
         </View>
